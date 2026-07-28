@@ -1,0 +1,14 @@
+flask==3.0.0
+flask-socketio==5.3.5
+speechrecognition==3.10.0
+pyttsx3==2.90
+pywhatkit==5.4
+wikipedia==1.4.0
+requests==2.31.0
+psutil==5.9.6
+bleak==0.21.1
+scikit-learn==1.3.2
+joblib==1.3.2
+openai==0.28.1
+pyaudio==0.2.14
+duckduckgo-search

@@ -1,0 +1,1284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PROTON Voice Command Center</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <style>
+        :root {
+            --slate-900: #0f172a;
+            --slate-800: #1e293b;
+            --slate-700: #334155;
+            --slate-600: #475569;
+            --slate-500: #64748b;
+            --slate-400: #94a3b8;
+            --slate-300: #cbd5e1;
+            --slate-200: #e2e8f0;
+            --slate-100: #f1f5f9;
+            --slate-50: #f8fafc;
+            
+            --purple-900: #581c87;
+            --purple-800: #6b21a8;
+            --purple-700: #7e22ce;
+            --purple-600: #9333ea;
+            --purple-500: #a855f7;
+            --purple-400: #c084fc;
+            --purple-300: #d8b4fe;
+            --purple-200: #e9d5ff;
+            --purple-100: #f3e8ff;
+            --purple-50: #faf5ff;
+            
+            --blue-500: #3b82f6;
+            --blue-400: #60a5fa;
+            --blue-300: #93c5fd;
+            --blue-200: #bfdbfe;
+            --blue-100: #dbeafe;
+            --blue-50: #eff6ff;
+            
+            --green-500: #22c55e;
+            --green-400: #4ade80;
+            --green-300: #86efac;
+            --green-200: #bbf7d0;
+            --green-100: #dcfce7;
+            --green-50: #f0fdf4;
+            
+            --red-500: #ef4444;
+            --red-400: #f87171;
+            --red-300: #fca5a5;
+            --red-200: #fecaca;
+            --red-100: #fee2e2;
+            --red-50: #fef2f2;
+            
+            --yellow-500: #eab308;
+            --yellow-400: #facc15;
+            --yellow-300: #fde047;
+            --yellow-200: #fef08a;
+            --yellow-100: #fef9c3;
+            --yellow-50: #fefce8;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        body {
+            min-height: 100vh;
+            background: linear-gradient(135deg, var(--slate-900), var(--purple-900), var(--slate-900));
+            color: white;
+        }
+        
+        .container {
+            width: 100%;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem 1rem;
+        }
+        
+        header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+        
+        header h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+            background: linear-gradient(to right, var(--blue-400), var(--purple-500));
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+        }
+        
+        header p {
+            color: var(--slate-300);
+            font-size: 1.125rem;
+        }
+        
+        .grid {
+            display: grid;
+            gap: 1.5rem;
+        }
+        
+        @media (min-width: 1024px) {
+            .lg\:grid-cols-3 {
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+            }
+            
+            .lg\:col-span-2 {
+                grid-column: span 2 / span 2;
+            }
+        }
+        
+        .card {
+            background-color: rgba(30, 41, 59, 0.5);
+            border: 1px solid var(--slate-700);
+            border-radius: 0.5rem;
+            backdrop-filter: blur(12px);
+        }
+        
+        .card-content {
+            padding: 1.5rem;
+        }
+        
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0.5rem 1rem;
+            border-radius: 0.375rem;
+            font-weight: 500;
+            transition: all 0.2s;
+            cursor: pointer;
+            border: 1px solid transparent;
+        }
+        
+        .btn-primary {
+            background-color: var(--blue-500);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background-color: var(--blue-600);
+        }
+        
+        .btn-secondary {
+            background-color: var(--slate-700);
+            color: white;
+        }
+        
+        .btn-secondary:hover {
+            background-color: var(--slate-600);
+        }
+        
+        .btn-outline {
+            background-color: transparent;
+            border-color: var(--slate-400);
+            color: var(--slate-200);
+        }
+        
+        .btn-outline:hover {
+            background-color: var(--slate-700);
+        }
+        
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.25rem 0.5rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 500;
+            border: 1px solid transparent;
+        }
+        
+        .badge-outline {
+            background-color: transparent;
+            border-color: currentColor;
+        }
+        
+        .badge-secondary {
+            background-color: var(--slate-800);
+            color: var(--slate-400);
+        }
+        
+        .badge-green {
+            background-color: rgba(22, 101, 52, 0.3);
+            color: var(--green-400);
+            border-color: var(--green-900);
+        }
+        
+        .badge-green:hover {
+            background-color: rgba(22, 101, 52, 0.5);
+        }
+        
+        .badge-gray {
+            background-color: var(--slate-800);
+            color: var(--slate-400);
+        }
+        
+        .text-xl {
+            font-size: 1.25rem;
+            line-height: 1.75rem;
+        }
+        
+        .font-bold {
+            font-weight: 700;
+        }
+        
+        .mb-2 {
+            margin-bottom: 0.5rem;
+        }
+        
+        .mb-4 {
+            margin-bottom: 1rem;
+        }
+        
+        .mb-6 {
+            margin-bottom: 1.5rem;
+        }
+        
+        .mt-6 {
+            margin-top: 1.5rem;
+        }
+        
+        .flex {
+            display: flex;
+        }
+        
+        .justify-between {
+            justify-content: space-between;
+        }
+        
+        .items-center {
+            align-items: center;
+        }
+        
+        .space-y-4 > * + * {
+            margin-top: 1rem;
+        }
+        
+        .text-gray-300 {
+            color: var(--slate-300);
+        }
+        
+        .text-blue-400 {
+            color: var(--blue-400);
+        }
+        
+        .text-green-400 {
+            color: var(--green-400);
+        }
+        
+        /* Command Center Styles */
+        .command-center {
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+        
+        .command-display {
+            background-color: var(--slate-800);
+            border: 1px solid var(--slate-700);
+            border-radius: 0.5rem;
+            padding: 1rem;
+            min-height: 100px;
+        }
+        
+        .command-display h3 {
+            font-size: 0.875rem;
+            color: var(--slate-400);
+            margin-bottom: 0.5rem;
+        }
+        
+        .command-display p {
+            font-size: 1rem;
+            color: white;
+        }
+        
+        .command-actions {
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+        
+        .quick-commands {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+        
+        /* Voice Visualizer */
+        .voice-visualizer {
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+            height: 60px;
+        }
+        
+        .visualizer-bar {
+            width: 0.5rem;
+            background-color: var(--blue-400);
+            border-radius: 0.25rem;
+            transition: height 0.2s ease;
+        }
+        
+        .visualizer-bar.active {
+            background-color: var(--purple-500);
+        }
+        
+        /* Status Indicator */
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .status-dot {
+            width: 0.75rem;
+            height: 0.75rem;
+            border-radius: 9999px;
+        }
+        
+        .status-idle {
+            background-color: var(--slate-500);
+        }
+        
+        .status-listening {
+            background-color: var(--blue-500);
+            animation: pulse 1.5s infinite;
+        }
+        
+        .status-processing {
+            background-color: var(--purple-500);
+            animation: pulse 1.5s infinite;
+        }
+        
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+        
+        /* Command History */
+        .command-history {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+        
+        .history-item {
+            background-color: var(--slate-800);
+            border: 1px solid var(--slate-700);
+            border-radius: 0.375rem;
+            padding: 0.75rem 1rem;
+            font-size: 0.875rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .history-item-time {
+            color: var(--slate-400);
+            font-size: 0.75rem;
+        }
+        
+        /* Feature Grid */
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 1rem;
+        }
+        
+        .feature-card {
+            background-color: var(--slate-800);
+            border: 1px solid var(--slate-700);
+            border-radius: 0.5rem;
+            padding: 1rem;
+            transition: all 0.2s;
+        }
+        
+        .feature-card:hover {
+            border-color: var(--purple-500);
+            transform: translateY(-2px);
+        }
+        
+        .feature-icon {
+            width: 2.5rem;
+            height: 2.5rem;
+            border-radius: 0.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 0.75rem;
+            background-color: var(--purple-900);
+            color: var(--purple-400);
+        }
+        
+        .feature-title {
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+        }
+        
+        .feature-desc {
+            color: var(--slate-400);
+            font-size: 0.875rem;
+        }
+        
+        /* Footer */
+        .footer {
+            margin-top: 3rem;
+            padding-top: 2rem;
+            border-top: 1px solid var(--slate-700);
+            text-align: center;
+            color: var(--slate-400);
+            font-size: 0.875rem;
+        }
+        
+        /* Toast Notification */
+        .toast-container {
+            position: fixed;
+            top: 1rem;
+            right: 1rem;
+            z-index: 50;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+        
+        .toast {
+            background-color: var(--slate-800);
+            border: 1px solid var(--slate-700);
+            border-radius: 0.375rem;
+            padding: 1rem;
+            width: 350px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            animation: slideIn 0.2s ease-out;
+        }
+        
+        .toast-success {
+            border-left: 4px solid var(--green-500);
+        }
+        
+        .toast-info {
+            border-left: 4px solid var(--blue-500);
+        }
+        
+        .toast-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .toast-title {
+            font-weight: 600;
+            color: white;
+        }
+        
+        .toast-close {
+            background: none;
+            border: none;
+            color: var(--slate-400);
+            cursor: pointer;
+        }
+        
+        .toast-description {
+            color: var(--slate-300);
+            font-size: 0.875rem;
+        }
+        
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+        
+        @media (max-width: 768px) {
+            .feature-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            header h1 {
+                font-size: 2rem;
+            }
+            
+            .toast {
+                width: 300px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="toast-container" id="toastContainer"></div>
+    
+    <div class="min-h-screen">
+        <div class="container">
+            <header>
+                <h1>PROTON Voice Command Center</h1>
+                <p>Your Personal AI Assistant </p>
+            </header>
+            
+            <div class="grid lg:grid-cols-3 gap-6">
+                <div class="lg:col-span-2">
+                    <div class="card">
+                        <div class="card-content">
+                            <div class="command-center">
+                                <div class="command-display">
+                                    <h3>Last Command:</h3>
+                                    <p id="lastCommand">Waiting for command...</p>
+                                </div>
+                                
+                                <div class="command-display">
+                                    <h3>Assistant Response:</h3>
+                                    <p id="assistantResponse">Ready to assist you. Click "Start Assistant" to begin.</p>
+                                </div>
+                                
+                                <div class="command-actions">
+                                    <button id="startAssistant" class="btn btn-primary">
+                                        <i class="fas fa-robot mr-2"></i>
+                                        <span>Start Assistant</span>
+                                    </button>
+                                    
+                                    <button id="toggleListening" class="btn btn-secondary" disabled>
+                                        <i class="fas fa-microphone mr-2"></i>
+                                        <span id="listenButtonText">Start Listening</span>
+                                    </button>
+                                    
+                                    <div style="margin-top: 1rem; width: 100%; display: flex; gap: 0.5rem;">
+                                        <input type="text" id="textCommandInput" placeholder="Type a command for JARVIS..." class="btn btn-outline" style="flex-grow: 1; text-align: left; padding: 0.75rem; border-color: var(--slate-600); background: rgba(30, 41, 59, 0.4); color: white;" disabled>
+                                        <button id="sendTextCommandBtn" class="btn btn-primary" style="padding: 0.75rem 1.25rem;" disabled>
+                                            <i class="fas fa-paper-plane"></i>
+                                        </button>
+                                    </div>
+                                    
+                                    <div class="quick-commands">
+                                        <button class="btn btn-secondary" onclick="sendCommand('what is the weather today?')">
+                                            <i class="fas fa-cloud-sun mr-1"></i> Weather
+                                        </button>
+                                        <button class="btn btn-secondary" onclick="sendCommand('what time is it?')">
+                                            <i class="fas fa-clock mr-1"></i> Time
+                                        </button>
+                                        <button class="btn btn-secondary" onclick="sendCommand('tell me a joke')">
+                                            <i class="fas fa-laugh-squint mr-1"></i> Joke
+                                        </button>
+                                        <button class="btn btn-secondary" onclick="sendCommand('play my favorite song')">
+                                            <i class="fas fa-music mr-1"></i> Play Music
+                                        </button>
+                                        <button class="btn btn-secondary" onclick="sendCommand('shutdown the system')">
+                                            <i class="fas fa-power-off mr-1"></i> Shutdown
+                                        </button>
+                                        <button class="btn btn-secondary" onclick="sendCommand('volume up')">
+                                            <i class="fas fa-volume-up mr-1"></i> Volume Up
+                                        </button>
+                                        <button class="btn btn-secondary" onclick="sendCommand('volume down')">
+                                            <i class="fas fa-volume-down mr-1"></i> Volume Down
+                                        </button>
+                                        <button class="btn btn-secondary" onclick="sendCommand('battery status')">
+                                            <i class="fas fa-battery-three-quarters mr-1"></i> Battery
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mt-6">
+                        <div class="card">
+                            <div class="card-content">
+                                <h2 class="text-xl font-bold mb-4 text-purple-400">
+                                    <i class="fas fa-brain mr-2"></i>Agent Thought Log
+                                </h2>
+                                <div id="agentStepDisplay" class="mb-4" style="display: none; padding: 0.75rem; background: rgba(147, 51, 234, 0.1); border: 1px solid rgba(147, 51, 234, 0.3); border-radius: 0.375rem;">
+                                    <span id="agentStepLabel" class="badge badge-green mr-2" style="background-color: var(--purple-600); color: white;">Step 1</span>
+                                    <span id="agentStepStatus" class="text-gray-300">Thinking...</span>
+                                </div>
+                                <div id="agentThoughtText" class="text-gray-200 mb-4" style="font-style: italic; white-space: pre-wrap; background: rgba(30, 41, 59, 0.7); padding: 1rem; border-radius: 0.375rem; border-left: 3px solid var(--purple-500); display: none;">
+                                    <!-- Thoughts stream here -->
+                                </div>
+                                <div id="agentActionText" class="text-blue-300 font-mono mb-4" style="background: rgba(15, 23, 42, 0.9); padding: 0.75rem; border-radius: 0.375rem; font-size: 0.875rem; display: none;">
+                                    <i class="fas fa-cog fa-spin mr-2"></i>Running Tool: <span id="agentToolName"></span>
+                                </div>
+                                <div id="agentObservationText" class="text-gray-300 font-mono" style="background: rgba(15, 23, 42, 0.9); padding: 0.75rem; border-radius: 0.375rem; font-size: 0.875rem; max-height: 250px; overflow-y: auto; display: none; white-space: pre-wrap; border-top: 1px dashed var(--slate-600);">
+                                    <!-- Observation outputs stream here -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mt-6">
+                        <div class="card">
+                            <div class="card-content">
+                                <h2 class="text-xl font-bold mb-4 text-blue-400">Voice Activity</h2>
+                                <div class="voice-visualizer" id="voiceVisualizer">
+                                    <!-- Bars will be added dynamically -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mt-6">
+                        <div class="feature-grid">
+                            <div class="feature-card">
+                                <div class="feature-icon">
+                                    <i class="fas fa-microphone"></i>
+                                </div>
+                                <h3 class="feature-title">Voice Commands</h3>
+                                <p class="feature-desc">Control with natural speech. No training required.</p>
+                            </div>
+                            <div class="feature-card">
+                                <div class="feature-icon">
+                                    <i class="fas fa-brain"></i>
+                                </div>
+                                <h3 class="feature-title">AI Processing</h3>
+                                <p class="feature-desc">Advanced natural language understanding.</p>
+                            </div>
+                            <div class="feature-card">
+                                <div class="feature-icon">
+                                    <i class="fas fa-bolt"></i>
+                                </div>
+                                <h3 class="feature-title">Quick Actions</h3>
+                                <p class="feature-desc">Execute commands with minimal latency.</p>
+                            </div>
+                            <div class="feature-card">
+                                <div class="feature-icon">
+                                    <i class="fas fa-history"></i>
+                                </div>
+                                <h3 class="feature-title">Command History</h3>
+                                <p class="feature-desc">Track your previous interactions.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div>
+                    <div class="card">
+                        <div class="card-content">
+                            <div class="flex justify-between items-center mb-4">
+                                <h2 class="text-xl font-bold text-blue-400">System Status</h2>
+                                <div class="status-indicator">
+                                    <div id="statusDot" class="status-dot status-idle"></div>
+                                    <span id="statusText">Idle</span>
+                                </div>
+                            </div>
+                            
+                            <div class="space-y-4 mb-6">
+                                <div class="flex justify-between">
+                                    <span class="text-gray-300">Assistant:</span>
+                                    <span id="assistantStatus" class="badge badge-secondary">Inactive</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="text-gray-300">Speech Recognition:</span>
+                                    <span id="speechRecognitionStatus" class="badge badge-secondary">Standby</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="text-gray-300">Connection:</span>
+                                    <span id="connectionStatus" class="badge badge-secondary">Disconnected</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="text-gray-300">Battery Status:</span>
+                                    <span id="batteryStatus" class="badge badge-secondary">Unknown</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mt-6">
+                        <div class="card">
+                            <div class="card-content">
+                                <h2 class="text-xl font-bold mb-4 text-blue-400">Command History</h2>
+                                <div class="command-history" id="commandHistory">
+                                    <!-- History items will be added dynamically -->
+                                    <div class="text-gray-300 text-center py-4">No commands yet</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="footer">
+                <p>PROTON Voice Command Center © 2025 | All rights reserved</p>
+            </div>
+        </div>
+    </div>
+        </div>
+    </div>
+
+    <script>
+        // Socket.io connection
+        const socket = io();
+        
+        // Feature flags
+        // Set this to false to disable browser-based speech recognition
+        const USE_BROWSER_SPEECH = false;
+
+        // State management
+        const state = {
+            isAssistantActive: false,
+            isListening: false,
+            lastCommand: '',
+            assistantResponse: 'Ready to assist you. Click "Start Assistant" to begin.',
+            status: 'idle',
+            commandHistory: []
+        };
+
+        // DOM elements
+        const elements = {
+            startAssistant: document.getElementById('startAssistant'),
+            toggleListening: document.getElementById('toggleListening'),
+            listenButtonText: document.getElementById('listenButtonText'),
+            lastCommand: document.getElementById('lastCommand'),
+            assistantResponse: document.getElementById('assistantResponse'),
+            statusDot: document.getElementById('statusDot'),
+            statusText: document.getElementById('statusText'),
+            assistantStatus: document.getElementById('assistantStatus'),
+            speechRecognitionStatus: document.getElementById('speechRecognitionStatus'),
+            connectionStatus: document.getElementById('connectionStatus'),
+            batteryStatus: document.getElementById('batteryStatus'),
+            commandHistory: document.getElementById('commandHistory'),
+            voiceVisualizer: document.getElementById('voiceVisualizer'),
+            toastContainer: document.getElementById('toastContainer')
+        };
+
+        // Initialize voice visualizer bars
+        function initVoiceVisualizer() {
+            elements.voiceVisualizer.innerHTML = '';
+            for (let i = 0; i < 20; i++) {
+                const bar = document.createElement('div');
+                bar.className = 'visualizer-bar';
+                bar.style.height = '5px';
+                elements.voiceVisualizer.appendChild(bar);
+            }
+        }
+
+        // Update voice visualizer animation
+        function updateVoiceVisualizer(isActive) {
+            const bars = elements.voiceVisualizer.querySelectorAll('.visualizer-bar');
+            
+            if (!isActive) {
+                bars.forEach(bar => {
+                    bar.style.height = '5px';
+                    bar.classList.remove('active');
+                });
+                return;
+            }
+            
+            bars.forEach(bar => {
+                const height = Math.floor(Math.random() * 50) + 5;
+                bar.style.height = `${height}px`;
+                bar.classList.add('active');
+            });
+        }
+
+        // Visualizer animation interval
+        let visualizerInterval;
+
+        // Toast notification function
+        function showToast(type, title, description) {
+            const toast = document.createElement('div');
+            toast.className = `toast toast-${type}`;
+            
+            toast.innerHTML = `
+                <div class="toast-header">
+                    <div class="toast-title">${title}</div>
+                    <button class="toast-close" onclick="this.parentElement.parentElement.remove()">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div class="toast-description">${description}</div>
+            `;
+            
+            elements.toastContainer.appendChild(toast);
+            
+            // Auto-remove after 5 seconds
+            setTimeout(() => {
+                toast.remove();
+            }, 5000);
+        }
+
+        // Update status
+        function updateStatus(newStatus) {
+            state.status = newStatus;
+            
+            // Update status dot
+            elements.statusDot.className = 'status-dot';
+            const cleanStatus = newStatus.replace(/\s+/g, '-');
+            elements.statusDot.classList.add(`status-${cleanStatus}`);
+            
+            // Update status text
+            let statusText = '';
+            switch (newStatus) {
+                case 'idle':
+                    statusText = 'Idle';
+                    break;
+                case 'listening':
+                    statusText = 'Listening';
+                    break;
+                case 'processing':
+                    statusText = 'Processing';
+                    break;
+                case 'speaking':
+                    statusText = 'Speaking';
+                    break;
+            }
+            elements.statusText.textContent = statusText;
+            
+            // Update voice visualizer
+            updateVoiceVisualizer(newStatus === 'listening' || newStatus === 'processing');
+            
+            // Start/stop visualizer animation
+            if (newStatus === 'listening' || newStatus === 'processing') {
+                if (visualizerInterval) clearInterval(visualizerInterval);
+                visualizerInterval = setInterval(() => {
+                    updateVoiceVisualizer(true);
+                }, 100);
+            } else {
+                if (visualizerInterval) clearInterval(visualizerInterval);
+                updateVoiceVisualizer(false);
+            }
+        }
+
+        // Toggle listening state
+        function toggleListening() {
+            if (!state.isAssistantActive) return;
+            
+            state.isListening = !state.isListening;
+            
+            // Update button text
+            if (state.isListening) {
+                elements.listenButtonText.textContent = 'Stop Listening';
+                showToast('success', 'Proton is listening', 'Say your command clearly');
+                updateStatus('listening');
+                socket.emit('start_listening');
+            } else {
+                elements.listenButtonText.textContent = 'Start Listening';
+                showToast('info', 'Proton is paused', 'Click to resume listening');
+                updateStatus('idle');
+                socket.emit('stop_listening');
+            }
+            
+            // Update speech recognition status badge
+            elements.speechRecognitionStatus.textContent = state.isListening ? 'Active' : 'Standby';
+            elements.speechRecognitionStatus.className = state.isListening 
+                ? 'badge badge-green badge-outline' 
+                : 'badge badge-secondary';
+        }
+
+        function resetAgentLogs() {
+            const stepDisplay = document.getElementById('agentStepDisplay');
+            const thoughtText = document.getElementById('agentThoughtText');
+            const actionText = document.getElementById('agentActionText');
+            const observationText = document.getElementById('agentObservationText');
+            if (stepDisplay) stepDisplay.style.display = 'none';
+            if (thoughtText) {
+                thoughtText.style.display = 'none';
+                thoughtText.textContent = '';
+            }
+            if (actionText) actionText.style.display = 'none';
+            const toolName = document.getElementById('agentToolName');
+            if (toolName) toolName.textContent = '';
+            if (observationText) {
+                observationText.style.display = 'none';
+                observationText.textContent = '';
+            }
+        }
+
+        // Enhanced Send command to backend function
+        function sendCommand(command) {
+            if (!state.isAssistantActive) {
+                showToast('warning', 'Assistant Inactive', 'Please start the assistant first');
+                return;
+            }
+            
+            console.log("Sending command:", command); // Debug log
+            resetAgentLogs();
+            
+            state.lastCommand = command;
+            elements.lastCommand.textContent = command;
+            
+            // Add to command history
+            state.commandHistory.unshift({
+                command,
+                time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            });
+            
+            // Keep only last 10 commands
+            if (state.commandHistory.length > 10) {
+                state.commandHistory.pop();
+            }
+            
+            updateCommandHistory();
+            
+            // Set status to processing
+            updateStatus('processing');
+            
+            try {
+                // Send command to server
+                socket.emit('command', { text: command });
+            } catch (error) {
+                console.error("Error sending command:", error);
+                showToast('error', 'Command Failed', 'Could not send command to server');
+                updateStatus('idle');
+            }
+        }
+
+        // Update command history display
+        function updateCommandHistory() {
+            if (state.commandHistory.length === 0) {
+                elements.commandHistory.innerHTML = '<div class="text-gray-300 text-center py-4">No commands yet</div>';
+                return;
+            }
+            
+            elements.commandHistory.innerHTML = state.commandHistory.map(item => `
+                <div class="history-item">
+                    <div>${item.command}</div>
+                    <div class="history-item-time">${item.time}</div>
+                </div>
+            `).join('');
+        }
+
+        // Start the assistant
+        function startAssistant() {
+            if (state.isAssistantActive) return;
+            
+            socket.emit('start');
+            state.isAssistantActive = true;
+            elements.assistantStatus.textContent = 'Active';
+            elements.assistantStatus.className = 'badge badge-green badge-outline';
+            elements.toggleListening.disabled = false;
+            
+            // Enable text input
+            const textInput = document.getElementById('textCommandInput');
+            const sendBtn = document.getElementById('sendTextCommandBtn');
+            if (textInput) textInput.disabled = false;
+            if (sendBtn) sendBtn.disabled = false;
+            
+            elements.assistantResponse.textContent = 'Assistant is ready. Click "Start Listening" or type a command below.';
+            showToast('success', 'Assistant Activated', 'Proton is now ready to receive commands');
+        }
+
+        // Socket.io event handlers
+        socket.on('connect', () => {
+            elements.connectionStatus.textContent = 'Connected';
+            elements.connectionStatus.className = 'badge badge-green badge-outline';
+        });
+
+        socket.on('disconnect', () => {
+            elements.connectionStatus.textContent = 'Disconnected';
+            elements.connectionStatus.className = 'badge badge-secondary';
+        });
+
+        socket.on('response', (data) => {
+            state.assistantResponse = data.text;
+            elements.assistantResponse.textContent = data.text;
+            updateStatus('speaking');
+            setTimeout(() => updateStatus('idle'), 2000);
+            
+            // Update battery status if response contains battery info
+            if (data.text.toLowerCase().includes('battery')) {
+                elements.batteryStatus.textContent = data.text.replace('Battery is at ', '').split(' and')[0];
+                if (data.text.includes('critically low')) {
+                    elements.batteryStatus.className = 'badge badge-outline';
+                    elements.batteryStatus.style.color = 'var(--red-400)';
+                    elements.batteryStatus.style.borderColor = 'var(--red-400)';
+                } else {
+                    elements.batteryStatus.className = 'badge badge-outline';
+                    elements.batteryStatus.style.color = 'var(--green-400)';
+                    elements.batteryStatus.style.borderColor = 'var(--green-400)';
+                }
+            }
+        });
+
+        socket.on('command_received', (data) => {
+            state.lastCommand = data.text;
+            elements.lastCommand.textContent = data.text;
+            resetAgentLogs();
+            
+            // Add to command history
+            state.commandHistory.unshift({
+                command: data.text,
+                time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            });
+            
+            // Keep only last 10 commands
+            if (state.commandHistory.length > 10) {
+                state.commandHistory.pop();
+            }
+            
+            updateCommandHistory();
+            updateStatus('processing');
+        });
+
+        // Local LLM Agent specific socket listeners
+        socket.on('agent_step', (data) => {
+            const stepDisplay = document.getElementById('agentStepDisplay');
+            const stepLabel = document.getElementById('agentStepLabel');
+            const stepStatus = document.getElementById('agentStepStatus');
+            if (stepDisplay) stepDisplay.style.display = 'block';
+            if (stepLabel) stepLabel.textContent = `Step ${data.step}`;
+            if (stepStatus) stepStatus.textContent = data.status;
+        });
+
+        socket.on('agent_thought', (data) => {
+            const thoughtText = document.getElementById('agentThoughtText');
+            if (thoughtText) {
+                thoughtText.style.display = 'block';
+                thoughtText.textContent = data.thought;
+            }
+        });
+
+        socket.on('agent_action', (data) => {
+            const actionText = document.getElementById('agentActionText');
+            const toolName = document.getElementById('agentToolName');
+            if (actionText) actionText.style.display = 'block';
+            if (toolName) toolName.textContent = `${data.tool}(${JSON.stringify(data.args)})`;
+        });
+
+        socket.on('agent_observation', (data) => {
+            const observationText = document.getElementById('agentObservationText');
+            if (observationText) {
+                observationText.style.display = 'block';
+                observationText.textContent = `Observation:\n${data.observation}`;
+            }
+        });
+
+        socket.on('speaking', (data) => {
+            state.assistantResponse = data.text;
+            elements.assistantResponse.textContent = data.text;
+            updateStatus('speaking');
+        });
+
+        socket.on('status', (data) => {
+            updateStatus(data.text.toLowerCase());
+        });
+
+        socket.on('error', (data) => {
+            showToast('error', 'Error', data.text);
+            updateStatus('idle');
+        });
+
+        // Browser speech recognition (Web Speech API) setup
+        let recognition;
+        let isWebSpeechSupported = false;
+        let recognitionErrorCount = 0;
+        let recognitionRetryTimeout = null;
+        let isRecognitionStarting = false;
+        const MAX_ERROR_COUNT = 3;
+        const RETRY_DELAY = 2000; // 2 seconds
+
+        function initSpeechRecognition() {
+            // If browser speech is disabled, just return and let backend microphone handle audio
+            if (!USE_BROWSER_SPEECH) {
+                console.log("Browser speech recognition disabled; using backend microphone only.");
+                elements.speechRecognitionStatus.textContent = 'Backend Mic';
+                elements.speechRecognitionStatus.className = 'badge badge-secondary';
+                return;
+            }
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!SpeechRecognition) {
+                console.warn("Web Speech API not supported in this browser.");
+                showToast('info', 'Speech Recognition', 'Browser microphone not supported, backend mic will be used if available.');
+                return;
+            }
+
+            isWebSpeechSupported = true;
+            recognition = new SpeechRecognition();
+            recognition.lang = 'en-US';
+            recognition.continuous = false;
+            recognition.interimResults = false;
+
+            recognition.onstart = () => {
+                console.log("Speech recognition started");
+                recognitionErrorCount = 0; // Reset error count on successful start
+                isRecognitionStarting = false;
+                updateStatus('listening');
+                elements.speechRecognitionStatus.textContent = 'Active (Browser)';
+                elements.speechRecognitionStatus.className = 'badge badge-green badge-outline';
+            };
+
+            recognition.onresult = (event) => {
+                const transcript = event.results[0][0].transcript;
+                console.log("Recognized speech:", transcript);
+                recognitionErrorCount = 0; // Reset on successful recognition
+                sendCommand(transcript);
+            };
+
+            recognition.onerror = (event) => {
+                console.error("Speech recognition error:", event.error);
+                isRecognitionStarting = false;
+                recognitionErrorCount++;
+                
+                // Handle different error types
+                const errorMessages = {
+                    'network': 'Network error. Check your internet connection.',
+                    'no-speech': 'No speech detected. Try speaking again.',
+                    'audio-capture': 'Microphone not accessible. Check permissions.',
+                    'aborted': 'Speech recognition aborted.',
+                    'not-allowed': 'Microphone permission denied. Please allow microphone access.'
+                };
+                
+                const errorMsg = errorMessages[event.error] || `Error: ${event.error}`;
+                
+                // Don't show toast for every error to avoid spam
+                if (recognitionErrorCount === 1 || event.error === 'not-allowed') {
+                    showToast('error', 'Speech Recognition Error', errorMsg);
+                }
+                
+                // Stop auto-restart on critical errors
+                if (event.error === 'not-allowed' || event.error === 'audio-capture') {
+                    state.isListening = false;
+                    elements.listenButtonText.textContent = 'Start Listening';
+                    updateStatus('idle');
+                    elements.speechRecognitionStatus.textContent = 'Error';
+                    elements.speechRecognitionStatus.className = 'badge badge-secondary';
+                    showToast('error', 'Microphone Error', 'Please check microphone permissions and try again.');
+                    return;
+                }
+                
+                // Stop if too many errors
+                if (recognitionErrorCount >= MAX_ERROR_COUNT) {
+                    state.isListening = false;
+                    elements.listenButtonText.textContent = 'Start Listening';
+                    updateStatus('idle');
+                    elements.speechRecognitionStatus.textContent = 'Error';
+                    elements.speechRecognitionStatus.className = 'badge badge-secondary';
+                    showToast('error', 'Speech Recognition Failed', 'Too many errors. Please check your connection and try again.');
+                    return;
+                }
+                
+                updateStatus('idle');
+            };
+
+            recognition.onend = () => {
+                console.log("Speech recognition ended");
+                
+                // Clear any pending retry
+                if (recognitionRetryTimeout) {
+                    clearTimeout(recognitionRetryTimeout);
+                    recognitionRetryTimeout = null;
+                }
+                
+                // Only auto-restart if listening and no critical errors
+                if (state.isListening && recognitionErrorCount < MAX_ERROR_COUNT && !isRecognitionStarting) {
+                    // Add delay before retry to avoid rapid restart loops
+                    recognitionRetryTimeout = setTimeout(() => {
+                        if (state.isListening && !isRecognitionStarting) {
+                            try {
+                                isRecognitionStarting = true;
+                                recognition.start();
+                            } catch (e) {
+                                console.error("Failed to restart recognition:", e);
+                                isRecognitionStarting = false;
+                                // If restart fails, stop listening
+                                if (e.name === 'InvalidStateError') {
+                                    state.isListening = false;
+                                    elements.listenButtonText.textContent = 'Start Listening';
+                                    updateStatus('idle');
+                                    showToast('info', 'Speech Recognition', 'Stopped. Click to restart.');
+                                }
+                            }
+                        }
+                    }, RETRY_DELAY);
+                } else if (!state.isListening) {
+                    updateStatus('idle');
+                    elements.speechRecognitionStatus.textContent = 'Standby';
+                    elements.speechRecognitionStatus.className = 'badge badge-secondary';
+                }
+            };
+        }
+
+        // Override toggleListening to use browser mic when available
+        function toggleListening() {
+            if (!state.isAssistantActive) return;
+
+            state.isListening = !state.isListening;
+
+            // Clear any pending retry timeouts
+            if (recognitionRetryTimeout) {
+                clearTimeout(recognitionRetryTimeout);
+                recognitionRetryTimeout = null;
+            }
+
+            // Update button text
+            if (state.isListening) {
+                elements.listenButtonText.textContent = 'Stop Listening';
+                showToast('success', 'Proton is listening', 'Say your command clearly');
+                updateStatus('listening');
+                socket.emit('start_listening');
+                
+                // Reset error count when manually starting
+                recognitionErrorCount = 0;
+
+                if (USE_BROWSER_SPEECH && isWebSpeechSupported && recognition) {
+                    try {
+                        isRecognitionStarting = true;
+                        recognition.start();
+                    } catch (e) {
+                        console.error("Failed to start recognition:", e);
+                        isRecognitionStarting = false;
+                        if (e.name === 'InvalidStateError') {
+                            showToast('error', 'Speech Recognition', 'Already running or not ready. Please wait.');
+                        } else {
+                            showToast('error', 'Speech Recognition', 'Failed to start. Check microphone permissions.');
+                            state.isListening = false;
+                            elements.listenButtonText.textContent = 'Start Listening';
+                            updateStatus('idle');
+                        }
+                    }
+                }
+            } else {
+                elements.listenButtonText.textContent = 'Start Listening';
+                showToast('info', 'Proton is paused', 'Click to resume listening');
+                updateStatus('idle');
+                socket.emit('stop_listening');
+
+                if (USE_BROWSER_SPEECH && isWebSpeechSupported && recognition) {
+                    try {
+                        recognition.stop();
+                    } catch (e) {
+                        console.error("Error stopping recognition:", e);
+                    }
+                }
+                
+                // Reset error count when stopping
+                recognitionErrorCount = 0;
+            }
+
+            // Update speech recognition status badge
+            elements.speechRecognitionStatus.textContent = state.isListening
+                ? (isWebSpeechSupported ? 'Active (Browser)' : 'Active')
+                : 'Standby';
+            elements.speechRecognitionStatus.className = state.isListening
+                ? 'badge badge-green badge-outline'
+                : 'badge badge-secondary';
+        }
+
+        // Initialize the app
+        function init() {
+            initVoiceVisualizer();
+            initSpeechRecognition();
+            updateStatus('idle');
+
+            // Event listeners
+            elements.startAssistant.addEventListener('click', startAssistant);
+            elements.toggleListening.addEventListener('click', toggleListening);
+
+            // Text input listeners
+            const textInput = document.getElementById('textCommandInput');
+            const sendBtn = document.getElementById('sendTextCommandBtn');
+            if (sendBtn && textInput) {
+                sendBtn.addEventListener('click', () => {
+                    const cmd = textInput.value.trim();
+                    if (cmd) {
+                        sendCommand(cmd);
+                        textInput.value = '';
+                    }
+                });
+                textInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') {
+                        const cmd = textInput.value.trim();
+                        if (cmd) {
+                            sendCommand(cmd);
+                            textInput.value = '';
+                        }
+                    }
+                });
+            }
+        }
+
+        // Start the app
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>
