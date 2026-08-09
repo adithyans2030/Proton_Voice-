@@ -6,6 +6,8 @@ import os
 import json
 from datetime import datetime
 import glob
+import shutil
+import zipfile
 
 class FileManager:
     def __init__(self):
@@ -108,4 +110,106 @@ class FileManager:
         except Exception as e:
             return f"Failed to get file info: {str(e)}"
 
+    def file_ops(self, action, src, dest=None):
+        """Perform move, copy, rename, or delete on files"""
+        try:
+            action = action.lower()
+            if action in ["delete", "remove"]:
+                if os.path.isfile(src):
+                    os.remove(src)
+                elif os.path.isdir(src):
+                    shutil.rmtree(src)
+                return f"Successfully deleted {src}"
+            elif action in ["move", "rename"]:
+                shutil.move(src, dest)
+                return f"Successfully moved/renamed to {dest}"
+            elif action == "copy":
+                if os.path.isfile(src):
+                    shutil.copy2(src, dest)
+                else:
+                    shutil.copytree(src, dest)
+                return f"Successfully copied to {dest}"
+            else:
+                return f"Unknown file operation: {action}"
+        except Exception as e:
+            return f"File operation failed: {str(e)}"
 
+    def zip_ops(self, action, zip_file, target=None):
+        """Compress or extract zip files"""
+        try:
+            if action.lower() == "extract":
+                if not target:
+                    target = os.path.dirname(zip_file)
+                with zipfile.ZipFile(zip_file, 'r') as zip_ref:
+                    zip_ref.extractall(target)
+                return f"Successfully extracted to {target}"
+            elif action.lower() == "compress":
+                if not zip_file.endswith(".zip"):
+                    zip_file += ".zip"
+                with zipfile.ZipFile(zip_file, 'w', zipfile.ZIP_DEFLATED) as zip_ref:
+                    if os.path.isdir(target):
+                        for root, dirs, files in os.walk(target):
+                            for file in files:
+                                file_path = os.path.join(root, file)
+                                zip_ref.write(file_path, os.path.relpath(file_path, target))
+                    else:
+                        zip_ref.write(target, os.path.basename(target))
+                return f"Successfully compressed {target} into {zip_file}"
+        except Exception as e:
+            return f"Zip operation failed: {str(e)}"
+
+    def organize_downloads(self):
+        """Organizes the user's Downloads folder by file extension"""
+        try:
+            downloads_dir = os.path.join(os.path.expanduser("~"), "Downloads")
+            categories = {
+                "Images": [".jpg", ".jpeg", ".png", ".gif", ".webp"],
+                "Documents": [".pdf", ".docx", ".txt", ".xlsx", ".pptx"],
+                "Installers": [".exe", ".msi", ".iso"],
+                "Archives": [".zip", ".rar", ".7z", ".tar", ".gz"]
+            }
+            
+            moved_count = 0
+            for filename in os.listdir(downloads_dir):
+                filepath = os.path.join(downloads_dir, filename)
+                if not os.path.isfile(filepath):
+                    continue
+                    
+                ext = os.path.splitext(filename)[1].lower()
+                for category, extensions in categories.items():
+                    if ext in extensions:
+                        cat_dir = os.path.join(downloads_dir, category)
+                        os.makedirs(cat_dir, exist_ok=True)
+                        shutil.move(filepath, os.path.join(cat_dir, filename))
+                        moved_count += 1
+                        break
+                        
+            return f"Successfully organized {moved_count} files in Downloads."
+        except Exception as e:
+            return f"Failed to organize downloads: {str(e)}"
+
+    def read_pdf(self, file_path):
+        """Read and extract text from a local PDF file"""
+        try:
+            import PyPDF2
+            if not os.path.exists(file_path):
+                return f"File '{file_path}' does not exist."
+                
+            text = ""
+            with open(file_path, 'rb') as file:
+                reader = PyPDF2.PdfReader(file)
+                num_pages = len(reader.pages)
+                # Limit to first 10 pages to prevent token overflow
+                limit = min(num_pages, 10)
+                for i in range(limit):
+                    page = reader.pages[i]
+                    text += page.extract_text() + "\n"
+                    
+            if num_pages > 10:
+                text += "\n[Note: Document truncated to first 10 pages.]"
+                
+            return f"Content of {os.path.basename(file_path)}:\n\n{text}"
+        except ImportError:
+            return "Error: PyPDF2 library not installed."
+        except Exception as e:
+            return f"Failed to read PDF: {str(e)}"

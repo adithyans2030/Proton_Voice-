@@ -12,6 +12,7 @@ class WakeWordDetector:
         self._callback = on_wake_word
         self._wake_word = wake_word.lower()
         self._running = False
+        self._paused = False
         self._thread = None
 
     def start(self):
@@ -23,10 +24,20 @@ class WakeWordDetector:
     def stop(self):
         self._running = False
 
+    def pause(self):
+        self._paused = True
+
+    def resume(self):
+        self._paused = False
+
     def _listen_loop(self):
         recognizer = sr.Recognizer()
         
         while self._running:
+            if self._paused:
+                time.sleep(0.5)
+                continue
+                
             try:
                 with sr.Microphone() as source:
                     # Adjust for ambient noise briefly
@@ -35,15 +46,17 @@ class WakeWordDetector:
                     audio = recognizer.listen(source, timeout=1, phrase_time_limit=3)
                 
                 # Try to recognize the speech
-                text = recognizer.recognize_google(audio).lower()
-                print(f"[WakeWordDetector] Heard: '{text}'")
-                
-                if self._wake_word in text:
-                    print(f"[WakeWordDetector] Wake word '{self._wake_word}' detected! 🎙️")
-                    try:
+                try:
+                    # Use Whisper base.en model for offline recognition
+                    text = recognizer.recognize_whisper(audio, model="base.en").lower()
+                    print(f"[WakeWord] Heard: {text}")
+                    if self._wake_word in text:
+                        print("[WakeWord] Wake word detected!")
                         self._callback()
-                    except Exception as e:
-                        print(f"[WakeWordDetector] Callback error: {e}")
+                except sr.UnknownValueError:
+                    pass
+                except sr.RequestError as e:
+                    print(f"[WakeWord] Whisper error: {e}")
                         
             except sr.WaitTimeoutError:
                 # This is normal, just loop again

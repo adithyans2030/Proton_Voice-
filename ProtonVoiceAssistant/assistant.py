@@ -53,7 +53,9 @@ def _emit(event: str, data: dict):
         response_callback(text)
 
 # Initialize OpenAI
-openai.api_key = os.getenv("OPENAI_API_KEY")
+openai_key = os.getenv("OPENAI_API_KEY")
+if openai_key:
+    openai.api_key = openai_key
 
 # Initialize Jarvis modules
 email_manager = EmailManager()

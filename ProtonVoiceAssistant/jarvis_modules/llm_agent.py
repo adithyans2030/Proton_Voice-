@@ -17,37 +17,62 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 # Import other Jarvis modules
 from jarvis_modules import (
     EmailManager, CalendarManager, FileManager,
-    SystemMonitor, ContextMemory
+    SystemMonitor, ContextMemory, SmartHomeManager,
+    SystemControlManager, ProductivityManager
 )
+from intent_model import predict_intent
 
 OLLAMA_URL = "http://localhost:11434/api/chat"
-DEFAULT_MODEL = "llama3.1:latest"
+DEFAULT_MODEL = "luttapi:latest"
+
+FAST_INTENTS = {
+    "GET_TIME": lambda self: self.execute_tool("get_time", {}),
+    "SYSTEM_STATUS": lambda self: self.execute_tool("system_status", {}),
+    "SYSTEM_HEALTH": lambda self: self.execute_tool("system_status", {}),
+}
+INTENT_CONFIDENCE_THRESHOLD = 0.10
 
 class LLMAgent:
+    RISKY_TOOLS = {"run_command", "write_file", "send_email", "run_code", "browse_web"}
+
     def __init__(self):
         self.email_manager = EmailManager()
         self.calendar_manager = CalendarManager()
         self.file_manager = FileManager()
         self.system_monitor = SystemMonitor()
         self.context_memory = ContextMemory()
+        self.smart_home = SmartHomeManager()
+        self.system_control = SystemControlManager()
+        self.productivity = ProductivityManager()
+        self._browser = None
+        self._page = None
         
-    def _call_ollama(self, messages):
-        """Send chat request to local Ollama instance"""
+    def _call_ollama(self, messages, socketio=None):
+        """Send chat request to local Ollama instance, streaming tokens as they arrive"""
         try:
             payload = {
                 "model": DEFAULT_MODEL,
                 "messages": messages,
-                "stream": False,
+                "stream": True,
+                "keep_alive": "30m",       # don't unload the model between queries
                 "options": {
-                    "temperature": 0.2  # Low temperature for stable tool selection and formatting
+                    "temperature": 0.2,
+                    "num_predict": 300,    # cap generation length — unbounded replies are a silent slowdown
                 }
             }
-            response = requests.post(OLLAMA_URL, json=payload, timeout=180)
-            if response.status_code == 200:
-                result = response.json()
-                return result.get("message", {}).get("content", "").strip()
-            else:
-                return f"Error: Ollama returned status code {response.status_code}. Details: {response.text}"
+            full_text = ""
+            with requests.post(OLLAMA_URL, json=payload, stream=True, timeout=180) as response:
+                if response.status_code != 200:
+                    return f"Error: Ollama returned status code {response.status_code}. Details: {response.text}"
+                for line in response.iter_lines():
+                    if not line:
+                        continue
+                    chunk = json.loads(line)
+                    token = chunk.get("message", {}).get("content", "")
+                    full_text += token
+                    if socketio and token:
+                        socketio.emit("agent_token", {"token": token})
+            return full_text.strip()
         except Exception as e:
             return f"Error connecting to Ollama: {str(e)}. Make sure Ollama is running (`ollama serve`)."
 
@@ -96,6 +121,47 @@ class LLMAgent:
         except Exception as e:
             return f"Error executing command: {str(e)}"
 
+    def run_code(self, code, language="python"):
+        import tempfile
+        ext = {"python": ".py", "javascript": ".js"}.get(language, ".py")
+        runner = {"python": "python", "javascript": "node"}.get(language, "python")
+        with tempfile.NamedTemporaryFile(mode="w", suffix=ext, delete=False, encoding="utf-8") as f:
+            f.write(code)
+            path = f.name
+        try:
+            result = subprocess.run([runner, path], capture_output=True, text=True, timeout=30)
+            return f"Stdout:\n{result.stdout}\nStderr:\n{result.stderr}"
+        except subprocess.TimeoutExpired:
+            return "Error: Code execution timed out after 30s."
+        finally:
+            os.remove(path)
+
+    def browse_web(self, action, url=None, selector=None, text=None):
+        """Persistent browser session across ReAct steps so it doesn't reopen a tab every call"""
+        from playwright.sync_api import sync_playwright
+        if self._browser is None:
+            self._pw = sync_playwright().start()
+            self._browser = self._pw.chromium.launch(headless=False)
+            self._page = self._browser.new_page()
+
+        try:
+            if action == "goto" and url:
+                self._page.goto(url, timeout=15000)
+                return f"Navigated to {url}."
+            elif action == "click" and selector:
+                self._page.click(selector, timeout=10000)
+                return f"Clicked '{selector}'."
+            elif action == "fill" and selector and text:
+                self._page.fill(selector, text)
+                return f"Filled '{selector}'."
+            elif action == "extract_text":
+                content = self._page.inner_text("body")
+                return content[:2000]
+            else:
+                return "Error: Unknown browse_web action or missing params."
+        except Exception as e:
+            return f"Error during browse_web: {str(e)}"
+
     def execute_tool(self, tool_name, kwargs):
         """Route tool names to the actual python modules"""
         try:
@@ -138,6 +204,29 @@ class LLMAgent:
                     return "Error: Missing 'command'."
                 return self.run_command(command)
                 
+            elif tool_name == "open_application":
+                app_name = kwargs.get("app_name")
+                if not app_name:
+                    return "Error: Missing 'app_name'."
+                try:
+                    subprocess.Popen(app_name, shell=True)
+                    return f"Opened {app_name}."
+                except Exception as e:
+                    return f"Error opening '{app_name}': {str(e)}"
+                    
+            elif tool_name == "run_code":
+                code = kwargs.get("code")
+                language = kwargs.get("language", "python")
+                if not code:
+                    return "Error: Missing 'code'."
+                return self.run_code(code, language)
+                
+            elif tool_name == "browse_web":
+                return self.browse_web(
+                    kwargs.get("action"), kwargs.get("url"),
+                    kwargs.get("selector"), kwargs.get("text")
+                )
+                
             elif tool_name == "web_search":
                 query = kwargs.get("query")
                 if not query:
@@ -146,6 +235,53 @@ class LLMAgent:
                 
             elif tool_name == "system_status":
                 return self.system_monitor.get_system_status()
+                
+            elif tool_name == "media_control":
+                action = kwargs.get("action")
+                if not action:
+                    return "Error: Missing 'action'."
+                try:
+                    import pyautogui
+                    pyautogui.press(action)
+                    return f"Sent media command: {action}"
+                except Exception as e:
+                    return f"Error controlling media: {str(e)}"
+                    
+            elif tool_name == "read_clipboard":
+                try:
+                    import pyperclip
+                    content = pyperclip.paste()
+                    return f"Clipboard content: {content[:1000]}"
+                except Exception as e:
+                    return f"Error reading clipboard: {str(e)}"
+                    
+            elif tool_name == "write_clipboard":
+                text = kwargs.get("text")
+                if not text:
+                    return "Error: Missing 'text'."
+                try:
+                    import pyperclip
+                    pyperclip.copy(text)
+                    return "Successfully copied text to clipboard."
+                except Exception as e:
+                    return f"Error writing to clipboard: {str(e)}"
+                    
+            elif tool_name == "get_active_window":
+                try:
+                    import pygetwindow as gw
+                    active = gw.getActiveWindow()
+                    if active:
+                        return f"User is currently looking at window: '{active.title}'"
+                    return "No active window detected."
+                except Exception as e:
+                    return f"Error getting active window: {str(e)}"
+                    
+            elif tool_name == "control_smart_home":
+                device = kwargs.get("device")
+                state = kwargs.get("state")
+                if not device or not state:
+                    return "Error: Missing 'device' or 'state'."
+                return self.smart_home.toggle_device(device, state)
                 
             elif tool_name == "send_email":
                 to_email = kwargs.get("to_email")
@@ -184,6 +320,81 @@ class LLMAgent:
                 else:
                     return f"Error: Unknown calendar action '{action}'."
                     
+            elif tool_name == "adjust_brightness":
+                level = kwargs.get("level")
+                if not level: return "Error: Missing 'level'."
+                return self.system_control.adjust_brightness(level)
+                
+            elif tool_name == "toggle_wifi":
+                state = kwargs.get("state")
+                if not state: return "Error: Missing 'state'."
+                return self.system_control.toggle_wifi(state)
+                
+            elif tool_name == "power_action":
+                action = kwargs.get("action")
+                if not action: return "Error: Missing 'action'."
+                return self.system_control.power_action(action)
+                
+            elif tool_name == "take_screenshot":
+                filename = kwargs.get("filename", "screenshot.png")
+                return self.system_control.take_screenshot(filename)
+                
+            elif tool_name == "close_application":
+                app_name = kwargs.get("app_name")
+                if not app_name: return "Error: Missing 'app_name'."
+                return self.system_control.close_application(app_name)
+                
+            elif tool_name == "file_ops":
+                action = kwargs.get("action")
+                src = kwargs.get("src")
+                dest = kwargs.get("dest")
+                if not action or not src: return "Error: Missing 'action' or 'src'."
+                return self.file_manager.file_ops(action, src, dest)
+                
+            elif tool_name == "zip_ops":
+                action = kwargs.get("action")
+                zip_file = kwargs.get("zip_file")
+                target = kwargs.get("target")
+                if not action or not zip_file: return "Error: Missing 'action' or 'zip_file'."
+                return self.file_manager.zip_ops(action, zip_file, target)
+                
+            elif tool_name == "organize_downloads":
+                return self.file_manager.organize_downloads()
+                
+            elif tool_name == "read_pdf":
+                file_path = kwargs.get("file_path")
+                if not file_path: return "Error: Missing 'file_path'."
+                return self.file_manager.read_pdf(file_path)
+                
+            elif tool_name == "add_todo":
+                task_name = kwargs.get("task_name")
+                if not task_name: return "Error: Missing 'task_name'."
+                return self.productivity.add_todo(task_name)
+                
+            elif tool_name == "list_todos":
+                return self.productivity.list_todos()
+                
+            elif tool_name == "remove_todo":
+                task_id = kwargs.get("task_id")
+                if not task_id: return "Error: Missing 'task_id'."
+                return self.productivity.remove_todo(task_id)
+                
+            elif tool_name == "set_timer":
+                minutes = kwargs.get("minutes")
+                message = kwargs.get("message", "Timer finished!")
+                if not minutes: return "Error: Missing 'minutes'."
+                return self.productivity.set_timer(minutes, message, lambda msg: self.context_memory.add_to_history("SYSTEM", msg))
+                
+            elif tool_name == "take_voice_note":
+                text = kwargs.get("text")
+                if not text: return "Error: Missing 'text'."
+                return self.productivity.take_voice_note(text)
+                
+            elif tool_name == "math_eval":
+                expression = kwargs.get("expression")
+                if not expression: return "Error: Missing 'expression'."
+                return self.productivity.math_eval(expression)
+
             elif tool_name == "get_time":
                 return f"Current time is {datetime.now().strftime('%I:%M %p')} on {datetime.now().strftime('%Y-%m-%d')}."
                 
@@ -220,40 +431,84 @@ class LLMAgent:
 
     def run_query(self, user_query, socketio=None):
         """Execute the main agentic loop (ReAct loop)"""
-        recent = self.context_memory.get_recent_context(5)
+        intent, confidence = predict_intent(user_query)
+        if intent in FAST_INTENTS and confidence >= INTENT_CONFIDENCE_THRESHOLD:
+            answer = FAST_INTENTS[intent](self)
+            self.context_memory.add_to_history(user_query, answer)
+            return answer
+
+        recent = self.context_memory.get_recent_context(3)
         
-        system_prompt = f"""You are Luttapi, Adi's personal AI voice assistant running locally on his laptop. You are smart, friendly, slightly witty, and always helpful. You help Adi with his work, answer questions, automate tasks, and keep him productive.
+        system_prompt = f"""You are Luttapi — Adi's personal AI assistant, running entirely on his local machine. Think JARVIS from Iron Man: razor-sharp intellect, dry wit, unfailingly precise, and completely devoted to making Adi's life easier and more productive. You speak with calm confidence, a slight edge of dry humor, and zero fluff.
+
 Current Date/Time: {datetime.now().strftime('%Y-%m-%d %I:%M %p')}.
 
+PERSONALITY & VOICE:
+- Address Adi as "sir" occasionally for the JARVIS feel, but "Adi" is also fine and natural.
+- Be concise. You're being listened to, not read — no bullet lists, no markdown, no asterisks.
+- Dry wit is welcome but never at Adi's expense. Be the smartest person in the room who is still genuinely helpful.
+- If you don't know something, say so crisply. Never make things up.
+- When completing a task, confirm it with brief satisfaction — "Done, sir." or "Consider it handled."
+- Never apologize excessively. Confidence is your default setting.
+- Proactively point out if something Adi is about to do looks risky or inefficient.
+
+RESPONSE RULES:
+- Keep Final Answers SHORT. One to three sentences is ideal. This is spoken out loud.
+- Never use markdown formatting, asterisks, numbered lists, or code blocks in your Final Answer.
+- Use natural spoken language. Write how a smart, confident person talks.
+
 You operate in a ReAct loop (Thought -> Action -> Observation -> Final Answer).
-For every turn, you must output a 'Thought:' block followed by either an 'Action:' block (to use a tool) or a 'Final Answer:' block (to speak to Adi).
+For every turn, output a 'Thought:' block followed by either an 'Action:' block (to use a tool) or a 'Final Answer:' block.
 
 Available Tools:
-- read_file(filepath="path/to/file") : Reads contents of a file (either absolute path or relative to notes folder).
-- write_file(filepath="path/to/file", content="text") : Writes/overwrites content to a file.
-- search_files(query="filename_word") : Searches for files in notes directory.
-- run_command(command="powershell code") : Executes a local powershell terminal command and returns stdout/stderr. Use this to run scripts, count files, list items, launch processes, etc.
-- web_search(query="search terms") : Searches the web using DuckDuckGo and returns summaries.
-- system_status() : Returns CPU, memory, battery, and process usage.
-- send_email(to_email="recipient@example.com", subject="topic", body="message") : Sends email.
-- read_emails() : Reads 5 latest emails.
-- manage_calendar(action="add"|"list_today"|"list_upcoming", title="Meeting", date_str="YYYY-MM-DD", time_str="HH:MM") : Manages calendar.
-- get_time() : Gets the current local time.
+- read_file(filepath="path/to/file") : Reads contents of a file.
+- write_file(filepath="path/to/file", content="text") : Writes or overwrites a file.
+- search_files(query="filename_word") : Searches for files in the notes directory.
+- run_command(command="powershell code") : Executes a PowerShell command, returns output.
+- open_application(app_name="notepad") : Opens an application by name or path.
+- browse_web(action="goto"|"click"|"fill"|"extract_text", url="...", selector="...", text="...") : Controls a real browser — navigate, click, fill forms, or read page text.
+- run_code(code="...", language="python") : Executes code and returns stdout/stderr.
+- web_search(query="search terms") : Searches the web via DuckDuckGo, returns summaries.
+- system_status() : Returns CPU, RAM, battery, and process usage.
+- send_email(to_email="...", subject="...", body="...") : Sends an email.
+- read_emails() : Reads the 5 most recent emails.
+- manage_calendar(action="add"|"list_today"|"list_upcoming", title="...", date_str="YYYY-MM-DD", time_str="HH:MM") : Manages the calendar.
+- get_time() : Returns the current local time.
+- media_control(action="playpause"|"nexttrack"|"prevtrack"|"volumeup"|"volumedown"|"volumemute") : Controls Spotify, YouTube, or system media.
+- read_clipboard() : Reads text currently copied to Adi's clipboard.
+- write_clipboard(text="...") : Copies text to Adi's clipboard so he can paste it.
+- get_active_window() : Checks what application/window Adi is currently looking at on his screen.
+- control_smart_home(device="bedroom_light"|"desk_lamp", state="on"|"off") : Turns smart home devices on or off.
+- adjust_brightness(level="50") : Set screen brightness (0-100).
+- toggle_wifi(state="on"|"off") : Enable or disable Wi-Fi.
+- power_action(action="lock"|"sleep"|"shutdown"|"restart") : Control system power state.
+- take_screenshot(filename="screenshot.png") : Takes a screenshot and saves it to Desktop.
+- close_application(app_name="notepad") : Force closes an application.
+- file_ops(action="move"|"copy"|"delete", src="path1", dest="path2") : Perform file operations.
+- zip_ops(action="extract"|"compress", zip_file="archive.zip", target="folder") : Compress or extract zips.
+- organize_downloads() : Organizes the user's Downloads folder into categorized folders.
+- read_pdf(file_path="path.pdf") : Reads and extracts text from a PDF file.
+- add_todo(task_name="...") : Add a task to the to-do list.
+- list_todos() : List all pending and completed to-do tasks.
+- remove_todo(task_id="1") : Remove a to-do task by ID.
+- set_timer(minutes="5", message="...") : Set a timer that will remind Adi in the background.
+- take_voice_note(text="...") : Instantly save a timestamped thought/note to voice_notes.txt.
+- math_eval(expression="5*12") : Calculate a mathematical expression safely.
 
-Formatting Guidelines:
-To invoke a tool, output exactly:
-Thought: [Reason about why you need this tool]
+Formatting:
+To call a tool:
+Thought: [Brief reasoning]
 Action: tool_name(param1="val1", param2="val2")
 
-When you have the final answer, output exactly:
-Thought: [Summarize your findings]
-Final Answer: [Your clean spoken response to Adi. Be friendly and call him Adi. Keep responses concise and helpful — this is spoken out loud so avoid long lists or markdown.]
+To give a final spoken response:
+Thought: [Brief summary of findings]
+Final Answer: [Spoken response. Concise. Natural. No markdown.]
 
 Remember:
 1. Always output 'Thought:' first.
-2. If you call a tool, you must stop outputting after the 'Action:' block. Wait for the environment to provide the 'Observation:'.
-3. Repeat the ReAct loop until you have enough information to write the 'Final Answer:'.
-4. For simple questions like time, greetings, or general knowledge, skip tools and answer directly.
+2. Stop after 'Action:' — wait for the Observation before continuing.
+3. Loop until you have enough information for a confident Final Answer.
+4. For simple questions — time, greetings, general knowledge — answer directly without tools.
 """
         
         messages = [{"role": "system", "content": system_prompt}]
@@ -268,7 +523,7 @@ Remember:
             if socketio:
                 socketio.emit("agent_step", {"step": step + 1, "status": "Thinking..."})
                 
-            model_response = self._call_ollama(messages)
+            model_response = self._call_ollama(messages, socketio=socketio)
             
             messages.append({"role": "assistant", "content": model_response})
             
@@ -281,6 +536,13 @@ Remember:
             if "Action:" in model_response:
                 tool_name, kwargs = self.parse_action(model_response)
                 if tool_name:
+                    if tool_name in self.RISKY_TOOLS and socketio:
+                        socketio.emit("confirm_required", {"tool": tool_name, "args": kwargs})
+                        if not kwargs.pop("_confirmed", False):
+                            observation = f"Paused: '{tool_name}' needs your confirmation before running. Click 'Confirm' to proceed."
+                            messages.append({"role": "user", "content": f"Observation: {observation}"})
+                            socketio.emit("agent_observation", {"observation": observation})
+                            continue
                     if socketio:
                         socketio.emit("agent_action", {"tool": tool_name, "args": kwargs})
                         
