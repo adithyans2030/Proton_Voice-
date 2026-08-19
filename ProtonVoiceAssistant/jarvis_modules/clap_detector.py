@@ -27,7 +27,6 @@ class ClapDetector:
         self._callback   = on_double_clap
         self._threshold  = sensitivity
         self._running    = False
-        self._paused     = False
         self._thread     = None
         self._last_clap  = 0.0
         self._clap_count = 0
@@ -40,12 +39,6 @@ class ClapDetector:
 
     def stop(self):
         self._running = False
-
-    def pause(self):
-        self._paused = True
-
-    def resume(self):
-        self._paused = False
 
     def _listen_loop(self):
         try:
@@ -65,10 +58,6 @@ class ClapDetector:
             in_clap     = False
 
             while self._running:
-                if self._paused:
-                    time.sleep(0.5)
-                    continue
-
                 try:
                     data  = stream.read(CHUNK, exception_on_overflow=False)
                     # Compute RMS
@@ -134,15 +123,11 @@ class ClapDetector:
         wake_words = ["hey luttapi", "luttapi", "hey jarvis", "jarvis", "hey proton"]
         print("[ClapDetector] Fallback: listening for voice wake word...")
         while self._running:
-            if self._paused:
-                time.sleep(0.5)
-                continue
-
             try:
                 with sr.Microphone() as src:
                     r.adjust_for_ambient_noise(src, duration=0.3)
                     audio = r.listen(src, timeout=5, phrase_time_limit=4)
-                text = r.recognize_whisper(audio, model="base.en").lower()
+                text = r.recognize_google(audio).lower()
                 print(f"[ClapDetector fallback] Heard: {text}")
                 if any(w in text for w in wake_words):
                     print("[ClapDetector fallback] Wake word detected!")

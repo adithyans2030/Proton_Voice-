@@ -56,6 +56,15 @@ def get_training_data() -> Tuple[List[str], List[str]]:
         "running processes", "top processes",
         # Context/Memory
         "what did we talk about", "conversation history", "remember this", "clear history",
+        # Media Control
+        "pause the music", "play the music", "next track", "skip this song", "previous track",
+        "mute the volume", "unmute",
+        # Clipboard
+        "read my clipboard", "what did i copy", "summarize clipboard",
+        # Active Window
+        "what am i looking at", "what is on my screen", "active window",
+        # Smart Home
+        "turn on the lights", "turn off the lights", "bedroom light on", "desk lamp off"
     ]
 
     labels = [
@@ -82,6 +91,15 @@ def get_training_data() -> Tuple[List[str], List[str]]:
         "RUNNING_PROCESSES", "RUNNING_PROCESSES",
         # Context
         "CONVERSATION_HISTORY", "CONVERSATION_HISTORY", "REMEMBER", "CLEAR_HISTORY",
+        # Media Control
+        "MEDIA_PAUSE", "MEDIA_PLAY", "MEDIA_NEXT", "MEDIA_NEXT", "MEDIA_PREV",
+        "MEDIA_MUTE", "MEDIA_UNMUTE",
+        # Clipboard
+        "READ_CLIPBOARD", "READ_CLIPBOARD", "READ_CLIPBOARD",
+        # Active Window
+        "ACTIVE_WINDOW", "ACTIVE_WINDOW", "ACTIVE_WINDOW",
+        # Smart Home
+        "SMART_HOME_ON", "SMART_HOME_OFF", "SMART_HOME_ON", "SMART_HOME_OFF"
     ]
 
     return texts, labels

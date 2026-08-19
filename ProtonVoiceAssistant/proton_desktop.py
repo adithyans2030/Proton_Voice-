@@ -29,9 +29,7 @@ from ui.overlay import (
     STATE_SPEAKING, STATE_SLEEPING,
 )
 from jarvis_modules.wakeword_detector import WakeWordDetector
-from jarvis_modules.clap_detector import ClapDetector
 from jarvis_modules.llm_agent import LLMAgent
-import keyboard
 
 import pyttsx3
 import queue
@@ -119,40 +117,26 @@ def speak(text: str):
     _speech_queue.put(text)
 
 
-# ── Listen (one-shot, Whisper AI offline) ───────────────────────────────────
+# ── Listen (one-shot, no wake word filtering) ─────────────────────────────────
 
 def listen_once(timeout=7, phrase_limit=12) -> str:
-    """Listen for a single utterance and return the text (lowercase) using offline Whisper."""
+    """Listen for a single utterance and return the text (lowercase)."""
     recognizer = sr.Recognizer()
-    
-    # Retry opening microphone if it is temporarily locked by background threads
-    for attempt in range(5):
-        try:
-            with sr.Microphone() as source:
-                recognizer.adjust_for_ambient_noise(source, duration=0.4)
-                print("[Luttapi] Listening for command (Whisper)...")
-                audio = recognizer.listen(source, timeout=timeout, phrase_time_limit=phrase_limit)
-            
-            # Use local whisper model ("base.en" is ~140MB and fast)
-            text = recognizer.recognize_whisper(audio, model="base.en").lower()
-            print(f"[Luttapi] Heard: {text}")
-            return text
-            
-        except (OSError, IOError) as e:
-            if attempt < 4:
-                time.sleep(0.3)
-                continue
-            print(f"[Luttapi] Microphone lock error: {e}")
-            return ""
-        except sr.WaitTimeoutError:
-            return ""
-        except sr.UnknownValueError:
-            return ""
-        except Exception as e:
-            print(f"[Luttapi] Listen error (Whisper): {e}")
-            return ""
-    
-    return ""
+    try:
+        with sr.Microphone() as source:
+            recognizer.adjust_for_ambient_noise(source, duration=0.4)
+            print("[Luttapi] Listening for command...")
+            audio = recognizer.listen(source, timeout=timeout, phrase_time_limit=phrase_limit)
+        text = recognizer.recognize_google(audio).lower()
+        print(f"[Luttapi] Heard: {text}")
+        return text
+    except sr.WaitTimeoutError:
+        return ""
+    except sr.UnknownValueError:
+        return ""
+    except Exception as e:
+        print(f"[Luttapi] Listen error: {e}")
+        return ""
 
 
 # ── Main App ──────────────────────────────────────────────────────────────────
@@ -173,25 +157,10 @@ class LuttapiApp:
 
         # Wake word detector → triggers _on_wake()
         self.wake_detector = WakeWordDetector(on_wake_word=self._on_wake_safe, wake_word="hey buddy")
-        
-        # Double-clap detector
-        self.clap_detector = ClapDetector(on_double_clap=self._on_wake_safe)
 
-        # Global Hotkey (Ninja Mode)
-        try:
-            keyboard.add_hotkey('ctrl+shift+space', self._on_wake_safe)
-            print("[Luttapi] Ninja Mode hotkey registered: Ctrl+Shift+Space")
-        except Exception as e:
-            print(f"[Luttapi] Failed to register global hotkey: {e}")
-
-        # Start engine threads
+        # Start engine thread
         threading.Thread(
             target=self._startup, daemon=True, name="LuttapiEngine"
-        ).start()
-        
-        # Start morning briefing thread
-        threading.Thread(
-            target=self._morning_briefing_loop, daemon=True, name="MorningBriefing"
         ).start()
 
     # ── Startup ───────────────────────────────────────────────────────────────
@@ -201,27 +170,15 @@ class LuttapiApp:
         self.overlay.show_text("Loading Luttapi AI…", auto_hide_sec=999)
         self.overlay.set_state(STATE_THINKING)
 
-        # Test LLM connectivity
-        print("[Luttapi] Testing Ollama connection...")
-        test = self.llm._call_ollama([
-            {"role": "user", "content": "Reply with just: ready"}
-        ])
-        if "Error" in test or "error" in test:
-            print(f"[Luttapi] Ollama warning: {test}")
-            self.overlay.show_text(
-                "⚠ Ollama not responding.\nMake sure 'ollama serve' is running.",
-                auto_hide_sec=8
-            )
-            self.overlay.set_state(STATE_IDLE)
-            time.sleep(5)
+        # Wait a moment for UI
+        time.sleep(1.0)
 
         self.overlay.show_text("Say 'Hey buddy' to wake me!", auto_hide_sec=5)
         self.overlay.set_state(STATE_IDLE)
 
-        # Start wake detectors
+        # Start wake word detector
         self.wake_detector.start()
-        # self.clap_detector.start()  # Disabled due to PyAudio threading segfault with wake_detector
-        print("[Luttapi] Ready. Say 'hey buddy', double-clap, or press Ctrl+Shift+Space to activate.")
+        print("[Luttapi] Ready. Say 'hey buddy' to activate.")
 
     # ── Wake cycle ────────────────────────────────────────────────────────────
 
@@ -235,108 +192,55 @@ class LuttapiApp:
         if self._busy or self._paused:
             return
         self._busy = True
-        self.wake_detector.pause()
-        self.clap_detector.pause()
         try:
             self._wake_cycle()
         except Exception as e:
             print(f"[Luttapi] Wake cycle error: {e}")
             self.overlay.set_state(STATE_IDLE)
         finally:
-            self.wake_detector.resume()
-            self.clap_detector.resume()
             self._busy = False
 
     def _wake_cycle(self):
-        """Full wake → listen → respond cycle with continuous conversation loop."""
+        """Full wake → listen → respond cycle."""
         # Greet
         self.overlay.set_state(STATE_SPEAKING)
-        self.overlay.show_text("Hello sir! 👋", auto_hide_sec=3)
-        speak("Hello sir!")
+        self.overlay.show_text("Hello buddy! 👋", auto_hide_sec=3)
+        speak("Hello buddy!")
         time.sleep(0.3)
 
-        consecutive_silence = 0
+        # Listen for command
+        self.overlay.set_state(STATE_LISTENING)
+        self.overlay.show_text("Listening… 🎙", auto_hide_sec=8)
+        command = listen_once(timeout=7, phrase_limit=12)
 
-        while True:
-            # Listen for command
-            self.overlay.set_state(STATE_LISTENING)
-            self.overlay.show_text("Listening… 🎙", auto_hide_sec=8)
-            
-            # Use shorter timeout for follow-ups
-            command = listen_once(timeout=6, phrase_limit=15)
+        if not command:
+            self.overlay.show_text("Didn't catch that. Say 'Hey buddy' again!", auto_hide_sec=4)
+            self.overlay.set_state(STATE_IDLE)
+            speak("I didn't catch that. Please say hey buddy and try again.")
+            return
 
-            if not command:
-                consecutive_silence += 1
-                if consecutive_silence >= 1:
-                    # After silence, go back to sleep
-                    self.overlay.show_text("Going to sleep.", auto_hide_sec=3)
-                    self.overlay.set_state(STATE_IDLE)
-                    speak("Standing by.")
-                    break
-                continue
+        # Show what was heard
+        self.overlay.show_text(f'"{command}"', auto_hide_sec=999)
+        self.overlay.set_state(STATE_THINKING)
+        print(f"[Luttapi] Processing: {command}")
 
-            consecutive_silence = 0
+        # Query Intent Model
+        try:
+            print("[Luttapi] Querying offline Intent Model...")
+            response = self.llm.run_query(command)
+            print(f"[Luttapi] Intent Response: {response[:100]}")
+        except Exception as e:
+            print(f"[Luttapi] LLM error: {e}")
+            response = "Sorry Adi, I ran into an error. Please make sure Ollama is running."
 
-            # Show what was heard
-            self.overlay.show_text(f'"{command}"', auto_hide_sec=999)
-            self.overlay.set_state(STATE_THINKING)
-            print(f"[Luttapi] Processing: {command}")
+        # Speak + show response
+        self.overlay.show_text(response, auto_hide_sec=10)
+        self.overlay.set_state(STATE_SPEAKING)
+        speak(response)
 
-            # Query LLM
-            try:
-                print("[Luttapi] Querying local Ollama LLM...")
-                response = self.llm.run_query(command)
-                print(f"[Luttapi] Python LLM Response: {response[:100]}")
-            except Exception as e:
-                print(f"[Luttapi] LLM error: {e}")
-                response = "Sorry sir, I ran into an error."
-
-            # Speak + show response
-            self.overlay.show_text(response, auto_hide_sec=10)
-            self.overlay.set_state(STATE_SPEAKING)
-            speak(response)
-
-            # Wait for speech to roughly finish before listening again
-            # We add a slight delay based on word count to prevent him listening to himself
-            words = len(response.split())
-            time.sleep(max(1.0, words * 0.3))
-            
-            # Loop restarts to listen for follow-up questions
-            
-    def _morning_briefing_loop(self):
-        """Automatically triggers the morning briefing at 8:00 AM once a day."""
-        has_run_today = False
-        last_run_day = -1
-        
-        while self._running:
-            now = time.localtime()
-            
-            # Reset the daily flag at midnight
-            if now.tm_yday != last_run_day and now.tm_hour < 8:
-                has_run_today = False
-                
-            if now.tm_hour == 8 and now.tm_min == 0 and not has_run_today:
-                if not self._paused and not self._busy:
-                    print("[Luttapi] Triggering morning briefing automation!")
-                    has_run_today = True
-                    last_run_day = now.tm_yday
-                    
-                    self._busy = True
-                    try:
-                        self.overlay.set_state(STATE_THINKING)
-                        self.overlay.show_text("Preparing Morning Briefing...", auto_hide_sec=999)
-                        speak("Good morning sir. Preparing your briefing.")
-                        response = self.llm.run_query("It is exactly 8 AM. Give me my morning briefing: check the time, system status, and any calendar events for today, then summarize my day.")
-                        self.overlay.set_state(STATE_SPEAKING)
-                        self.overlay.show_text(response, auto_hide_sec=15)
-                        speak(response)
-                    except Exception as e:
-                        print(f"Morning briefing error: {e}")
-                    finally:
-                        self.overlay.set_state(STATE_IDLE)
-                        self._busy = False
-                        
-            time.sleep(45)
+        # Return to idle
+        time.sleep(0.5)
+        self.overlay.set_state(STATE_IDLE)
 
     # ── Menu callbacks ────────────────────────────────────────────────────────
 
@@ -353,7 +257,6 @@ class LuttapiApp:
     def _exit(self):
         self._running = False
         self.wake_detector.stop()
-        self.clap_detector.stop()
         _speech_queue.put(None)
         self.overlay.stop()
 
@@ -375,10 +278,5 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"[Autostart] {e}")
 
-    try:
-        app = LuttapiApp()
-        app.run()
-    except Exception as e:
-        import traceback
-        with open("crash.txt", "w") as f:
-            traceback.print_exc(file=f)
+    app = LuttapiApp()
+    app.run()

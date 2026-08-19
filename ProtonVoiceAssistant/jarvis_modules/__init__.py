@@ -1,4 +1,4 @@
-﻿"""
+"""
 Jarvis Modules Package
 All Jarvis assistant modules
 """
@@ -8,8 +8,6 @@ from .file_manager import FileManager
 from .system_monitor import SystemMonitor
 from .context_memory import ContextMemory
 from .smart_home import SmartHomeManager
-from .system_control import SystemControlManager
-from .productivity import ProductivityManager
 
 __all__ = [
     'EmailManager',
@@ -17,7 +15,7 @@ __all__ = [
     'FileManager',
     'SystemMonitor',
     'ContextMemory',
-    'SmartHomeManager',
-    'SystemControlManager',
-    'ProductivityManager'
+    'SmartHomeManager'
 ]
+
+

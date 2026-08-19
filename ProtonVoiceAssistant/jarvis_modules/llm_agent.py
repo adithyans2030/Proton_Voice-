@@ -17,20 +17,17 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 # Import other Jarvis modules
 from jarvis_modules import (
     EmailManager, CalendarManager, FileManager,
-    SystemMonitor, ContextMemory, SmartHomeManager,
-    SystemControlManager, ProductivityManager
+    SystemMonitor, ContextMemory, SmartHomeManager
 )
 from intent_model import predict_intent
 
-OLLAMA_URL = "http://localhost:11434/api/chat"
-DEFAULT_MODEL = "luttapi:latest"
 
 FAST_INTENTS = {
     "GET_TIME": lambda self: self.execute_tool("get_time", {}),
     "SYSTEM_STATUS": lambda self: self.execute_tool("system_status", {}),
     "SYSTEM_HEALTH": lambda self: self.execute_tool("system_status", {}),
 }
-INTENT_CONFIDENCE_THRESHOLD = 0.10
+INTENT_CONFIDENCE_THRESHOLD = 0.05
 
 class LLMAgent:
     RISKY_TOOLS = {"run_command", "write_file", "send_email", "run_code", "browse_web"}
@@ -42,39 +39,10 @@ class LLMAgent:
         self.system_monitor = SystemMonitor()
         self.context_memory = ContextMemory()
         self.smart_home = SmartHomeManager()
-        self.system_control = SystemControlManager()
-        self.productivity = ProductivityManager()
         self._browser = None
         self._page = None
         
-    def _call_ollama(self, messages, socketio=None):
-        """Send chat request to local Ollama instance, streaming tokens as they arrive"""
-        try:
-            payload = {
-                "model": DEFAULT_MODEL,
-                "messages": messages,
-                "stream": True,
-                "keep_alive": "30m",       # don't unload the model between queries
-                "options": {
-                    "temperature": 0.2,
-                    "num_predict": 300,    # cap generation length — unbounded replies are a silent slowdown
-                }
-            }
-            full_text = ""
-            with requests.post(OLLAMA_URL, json=payload, stream=True, timeout=180) as response:
-                if response.status_code != 200:
-                    return f"Error: Ollama returned status code {response.status_code}. Details: {response.text}"
-                for line in response.iter_lines():
-                    if not line:
-                        continue
-                    chunk = json.loads(line)
-                    token = chunk.get("message", {}).get("content", "")
-                    full_text += token
-                    if socketio and token:
-                        socketio.emit("agent_token", {"token": token})
-            return full_text.strip()
-        except Exception as e:
-            return f"Error connecting to Ollama: {str(e)}. Make sure Ollama is running (`ollama serve`)."
+
 
     def web_search(self, query):
         """Search the web using DuckDuckGo HTML interface without cert verification"""
@@ -320,81 +288,6 @@ class LLMAgent:
                 else:
                     return f"Error: Unknown calendar action '{action}'."
                     
-            elif tool_name == "adjust_brightness":
-                level = kwargs.get("level")
-                if not level: return "Error: Missing 'level'."
-                return self.system_control.adjust_brightness(level)
-                
-            elif tool_name == "toggle_wifi":
-                state = kwargs.get("state")
-                if not state: return "Error: Missing 'state'."
-                return self.system_control.toggle_wifi(state)
-                
-            elif tool_name == "power_action":
-                action = kwargs.get("action")
-                if not action: return "Error: Missing 'action'."
-                return self.system_control.power_action(action)
-                
-            elif tool_name == "take_screenshot":
-                filename = kwargs.get("filename", "screenshot.png")
-                return self.system_control.take_screenshot(filename)
-                
-            elif tool_name == "close_application":
-                app_name = kwargs.get("app_name")
-                if not app_name: return "Error: Missing 'app_name'."
-                return self.system_control.close_application(app_name)
-                
-            elif tool_name == "file_ops":
-                action = kwargs.get("action")
-                src = kwargs.get("src")
-                dest = kwargs.get("dest")
-                if not action or not src: return "Error: Missing 'action' or 'src'."
-                return self.file_manager.file_ops(action, src, dest)
-                
-            elif tool_name == "zip_ops":
-                action = kwargs.get("action")
-                zip_file = kwargs.get("zip_file")
-                target = kwargs.get("target")
-                if not action or not zip_file: return "Error: Missing 'action' or 'zip_file'."
-                return self.file_manager.zip_ops(action, zip_file, target)
-                
-            elif tool_name == "organize_downloads":
-                return self.file_manager.organize_downloads()
-                
-            elif tool_name == "read_pdf":
-                file_path = kwargs.get("file_path")
-                if not file_path: return "Error: Missing 'file_path'."
-                return self.file_manager.read_pdf(file_path)
-                
-            elif tool_name == "add_todo":
-                task_name = kwargs.get("task_name")
-                if not task_name: return "Error: Missing 'task_name'."
-                return self.productivity.add_todo(task_name)
-                
-            elif tool_name == "list_todos":
-                return self.productivity.list_todos()
-                
-            elif tool_name == "remove_todo":
-                task_id = kwargs.get("task_id")
-                if not task_id: return "Error: Missing 'task_id'."
-                return self.productivity.remove_todo(task_id)
-                
-            elif tool_name == "set_timer":
-                minutes = kwargs.get("minutes")
-                message = kwargs.get("message", "Timer finished!")
-                if not minutes: return "Error: Missing 'minutes'."
-                return self.productivity.set_timer(minutes, message, lambda msg: self.context_memory.add_to_history("SYSTEM", msg))
-                
-            elif tool_name == "take_voice_note":
-                text = kwargs.get("text")
-                if not text: return "Error: Missing 'text'."
-                return self.productivity.take_voice_note(text)
-                
-            elif tool_name == "math_eval":
-                expression = kwargs.get("expression")
-                if not expression: return "Error: Missing 'expression'."
-                return self.productivity.math_eval(expression)
-
             elif tool_name == "get_time":
                 return f"Current time is {datetime.now().strftime('%I:%M %p')} on {datetime.now().strftime('%Y-%m-%d')}."
                 
@@ -403,169 +296,53 @@ class LLMAgent:
         except Exception as e:
             return f"Error running tool '{tool_name}': {str(e)}"
 
-    def parse_action(self, response_text):
-        """Parse action name and arguments from Llama output"""
-        action_match = re.search(r"Action:\s*(\w+)\((.*)\)", response_text, re.DOTALL)
-        if not action_match:
-            return None, {}
-            
-        tool_name = action_match.group(1).strip()
-        args_str = action_match.group(2).strip()
-        
-        # Try parsing as JSON first
-        if args_str.startswith("{") and args_str.endswith("}"):
-            try:
-                return tool_name, json.loads(args_str)
-            except:
-                pass
-                
-        # Try parsing as python kwargs: key=val or key="val"
-        kwargs = {}
-        matches = re.finditer(r'(\w+)\s*=\s*(?:"([^"]*)"|\'([^\']*)\'|([^\s,]+))', args_str)
-        for m in matches:
-            key = m.group(1)
-            val = m.group(2) or m.group(3) or m.group(4)
-            kwargs[key] = val
-            
-        return tool_name, kwargs
-
     def run_query(self, user_query, socketio=None):
-        """Execute the main agentic loop (ReAct loop)"""
+        """Execute the rigid, offline intent-based loop"""
         intent, confidence = predict_intent(user_query)
+        
+        print(f"[Luttapi] Predicted Intent: {intent} ({confidence:.2f})")
+        
         if intent in FAST_INTENTS and confidence >= INTENT_CONFIDENCE_THRESHOLD:
             answer = FAST_INTENTS[intent](self)
             self.context_memory.add_to_history(user_query, answer)
             return answer
-
-        recent = self.context_memory.get_recent_context(3)
-        
-        system_prompt = f"""You are Luttapi — Adi's personal AI assistant, running entirely on his local machine. Think JARVIS from Iron Man: razor-sharp intellect, dry wit, unfailingly precise, and completely devoted to making Adi's life easier and more productive. You speak with calm confidence, a slight edge of dry humor, and zero fluff.
-
-Current Date/Time: {datetime.now().strftime('%Y-%m-%d %I:%M %p')}.
-
-PERSONALITY & VOICE:
-- Address Adi as "sir" occasionally for the JARVIS feel, but "Adi" is also fine and natural.
-- Be concise. You're being listened to, not read — no bullet lists, no markdown, no asterisks.
-- Dry wit is welcome but never at Adi's expense. Be the smartest person in the room who is still genuinely helpful.
-- If you don't know something, say so crisply. Never make things up.
-- When completing a task, confirm it with brief satisfaction — "Done, sir." or "Consider it handled."
-- Never apologize excessively. Confidence is your default setting.
-- Proactively point out if something Adi is about to do looks risky or inefficient.
-
-RESPONSE RULES:
-- Keep Final Answers SHORT. One to three sentences is ideal. This is spoken out loud.
-- Never use markdown formatting, asterisks, numbered lists, or code blocks in your Final Answer.
-- Use natural spoken language. Write how a smart, confident person talks.
-
-You operate in a ReAct loop (Thought -> Action -> Observation -> Final Answer).
-For every turn, output a 'Thought:' block followed by either an 'Action:' block (to use a tool) or a 'Final Answer:' block.
-
-Available Tools:
-- read_file(filepath="path/to/file") : Reads contents of a file.
-- write_file(filepath="path/to/file", content="text") : Writes or overwrites a file.
-- search_files(query="filename_word") : Searches for files in the notes directory.
-- run_command(command="powershell code") : Executes a PowerShell command, returns output.
-- open_application(app_name="notepad") : Opens an application by name or path.
-- browse_web(action="goto"|"click"|"fill"|"extract_text", url="...", selector="...", text="...") : Controls a real browser — navigate, click, fill forms, or read page text.
-- run_code(code="...", language="python") : Executes code and returns stdout/stderr.
-- web_search(query="search terms") : Searches the web via DuckDuckGo, returns summaries.
-- system_status() : Returns CPU, RAM, battery, and process usage.
-- send_email(to_email="...", subject="...", body="...") : Sends an email.
-- read_emails() : Reads the 5 most recent emails.
-- manage_calendar(action="add"|"list_today"|"list_upcoming", title="...", date_str="YYYY-MM-DD", time_str="HH:MM") : Manages the calendar.
-- get_time() : Returns the current local time.
-- media_control(action="playpause"|"nexttrack"|"prevtrack"|"volumeup"|"volumedown"|"volumemute") : Controls Spotify, YouTube, or system media.
-- read_clipboard() : Reads text currently copied to Adi's clipboard.
-- write_clipboard(text="...") : Copies text to Adi's clipboard so he can paste it.
-- get_active_window() : Checks what application/window Adi is currently looking at on his screen.
-- control_smart_home(device="bedroom_light"|"desk_lamp", state="on"|"off") : Turns smart home devices on or off.
-- adjust_brightness(level="50") : Set screen brightness (0-100).
-- toggle_wifi(state="on"|"off") : Enable or disable Wi-Fi.
-- power_action(action="lock"|"sleep"|"shutdown"|"restart") : Control system power state.
-- take_screenshot(filename="screenshot.png") : Takes a screenshot and saves it to Desktop.
-- close_application(app_name="notepad") : Force closes an application.
-- file_ops(action="move"|"copy"|"delete", src="path1", dest="path2") : Perform file operations.
-- zip_ops(action="extract"|"compress", zip_file="archive.zip", target="folder") : Compress or extract zips.
-- organize_downloads() : Organizes the user's Downloads folder into categorized folders.
-- read_pdf(file_path="path.pdf") : Reads and extracts text from a PDF file.
-- add_todo(task_name="...") : Add a task to the to-do list.
-- list_todos() : List all pending and completed to-do tasks.
-- remove_todo(task_id="1") : Remove a to-do task by ID.
-- set_timer(minutes="5", message="...") : Set a timer that will remind Adi in the background.
-- take_voice_note(text="...") : Instantly save a timestamped thought/note to voice_notes.txt.
-- math_eval(expression="5*12") : Calculate a mathematical expression safely.
-
-Formatting:
-To call a tool:
-Thought: [Brief reasoning]
-Action: tool_name(param1="val1", param2="val2")
-
-To give a final spoken response:
-Thought: [Brief summary of findings]
-Final Answer: [Spoken response. Concise. Natural. No markdown.]
-
-Remember:
-1. Always output 'Thought:' first.
-2. Stop after 'Action:' — wait for the Observation before continuing.
-3. Loop until you have enough information for a confident Final Answer.
-4. For simple questions — time, greetings, general knowledge — answer directly without tools.
-"""
-        
-        messages = [{"role": "system", "content": system_prompt}]
-        
-        for turn in recent:
-            messages.append({"role": "user", "content": turn["user"]})
-            messages.append({"role": "assistant", "content": f"Final Answer: {turn['assistant']}"})
             
-        messages.append({"role": "user", "content": user_query})
-        
-        for step in range(5):
-            if socketio:
-                socketio.emit("agent_step", {"step": step + 1, "status": "Thinking..."})
-                
-            model_response = self._call_ollama(messages, socketio=socketio)
-            
-            messages.append({"role": "assistant", "content": model_response})
-            
-            thought_match = re.search(r"Thought:\s*(.*?)(?:Action:|Final Answer:|$)", model_response, re.DOTALL)
-            thought = thought_match.group(1).strip() if thought_match else ""
-            
-            if socketio and thought:
-                socketio.emit("agent_thought", {"thought": thought})
-                
-            if "Action:" in model_response:
-                tool_name, kwargs = self.parse_action(model_response)
-                if tool_name:
-                    if tool_name in self.RISKY_TOOLS and socketio:
-                        socketio.emit("confirm_required", {"tool": tool_name, "args": kwargs})
-                        if not kwargs.pop("_confirmed", False):
-                            observation = f"Paused: '{tool_name}' needs your confirmation before running. Click 'Confirm' to proceed."
-                            messages.append({"role": "user", "content": f"Observation: {observation}"})
-                            socketio.emit("agent_observation", {"observation": observation})
-                            continue
-                    if socketio:
-                        socketio.emit("agent_action", {"tool": tool_name, "args": kwargs})
-                        
-                    observation = self.execute_tool(tool_name, kwargs)
-                    
-                    if socketio:
-                        socketio.emit("agent_observation", {"observation": observation})
-                        
-                    messages.append({"role": "user", "content": f"Observation: {observation}"})
+        # Map intents to rigid actions
+        if confidence >= INTENT_CONFIDENCE_THRESHOLD:
+            answer = ""
+            if intent == "MEDIA_PLAY" or intent == "MEDIA_PAUSE":
+                answer = self.execute_tool("media_control", {"action": "playpause"})
+            elif intent == "MEDIA_NEXT":
+                answer = self.execute_tool("media_control", {"action": "nexttrack"})
+            elif intent == "MEDIA_PREV":
+                answer = self.execute_tool("media_control", {"action": "prevtrack"})
+            elif intent == "MEDIA_MUTE" or intent == "MEDIA_UNMUTE":
+                answer = self.execute_tool("media_control", {"action": "volumemute"})
+            elif intent == "READ_CLIPBOARD":
+                answer = self.execute_tool("read_clipboard", {})
+            elif intent == "ACTIVE_WINDOW":
+                answer = self.execute_tool("get_active_window", {})
+            elif intent == "SMART_HOME_ON":
+                if "desk" in user_query.lower():
+                    answer = self.execute_tool("control_smart_home", {"device": "desk_lamp", "state": "on"})
                 else:
-                    observation = "Error: Failed to parse tool action syntax. Please use: Action: tool_name(param1=\"val1\")"
-                    messages.append({"role": "user", "content": f"Observation: {observation}"})
-            
-            elif "Final Answer:" in model_response:
-                final_match = re.search(r"Final Answer:\s*(.*)", model_response, re.DOTALL)
-                final_answer = final_match.group(1).strip() if final_match else model_response
-                self.context_memory.add_to_history(user_query, final_answer)
-                return final_answer
-                
+                    answer = self.execute_tool("control_smart_home", {"device": "bedroom_light", "state": "on"})
+            elif intent == "SMART_HOME_OFF":
+                if "desk" in user_query.lower():
+                    answer = self.execute_tool("control_smart_home", {"device": "desk_lamp", "state": "off"})
+                else:
+                    answer = self.execute_tool("control_smart_home", {"device": "bedroom_light", "state": "off"})
+            elif intent == "OPEN_NOTEPAD":
+                answer = self.execute_tool("open_application", {"app_name": "notepad"})
+            elif intent == "OPEN_CALCULATOR":
+                answer = self.execute_tool("open_application", {"app_name": "calc"})
             else:
-                self.context_memory.add_to_history(user_query, model_response)
-                return model_response
+                answer = f"I understood your intent as '{intent}', but I haven't been programmed to execute it in rigid mode."
                 
-        fallback = "I apologize, but that task requires too many actions. Is there a specific part you would like me to perform first?"
+            self.context_memory.add_to_history(user_query, answer)
+            return answer
+            
+        # Fallback for unrecognized commands
+        fallback = "I'm sorry sir, I don't understand that command."
         self.context_memory.add_to_history(user_query, fallback)
         return fallback
