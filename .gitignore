@@ -1,5 +1,32 @@
+# Python
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
+.venv/
+venv/
+
+# Editors
 .vscode/
+
+# Secrets and local config - never commit
+.env
+.env.*
+!.env.example
+
+# Legacy Proton runtime data (personal history / credentials)
+ProtonVoiceAssistant/data/context.json
+ProtonVoiceAssistant/data/email_config.json
+
+# StudyBot runtime data (normally lives in %LOCALAPPDATA%\StudyBot, outside the repo)
+studybot/data/
+studybot/.pytest_cache/
+
+# Crash / debug scratch output
+*.log
+crash_*.txt
+error*.txt
+output*.txt
+
+# pytest
+.pytest_cache/

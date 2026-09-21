@@ -1,14 +1,38 @@
+# Legacy Proton/Jarvis voice assistant.
+# Versions match what is installed and working on the dev machine (Python 3.12).
+# The new StudyBot service has its own requirements in ../studybot/backend/.
+
+# Web / sockets
 flask==3.0.0
 flask-socketio==5.3.5
+
+# Speech in / out
 speechrecognition==3.10.0
+pyaudio==0.2.14
 pyttsx3==2.90
+edge-tts==7.2.8
+pygame==2.6.1
+
+# Intent model
+scikit-learn==1.9.0
+joblib==1.5.3
+
+# Integrations
 pywhatkit==5.4
 wikipedia==1.4.0
 requests==2.31.0
-psutil==5.9.6
+beautifulsoup4==4.13.3
+playwright==1.61.0
 bleak==0.21.1
-scikit-learn==1.3.2
-joblib==1.3.2
+psutil==5.9.6
 openai==0.28.1
-pyaudio==0.2.14
 duckduckgo-search
+
+# Windows desktop control
+pywin32==310
+comtypes==1.4.10
+pycaw==20240210
+pyautogui==0.9.54
+pyperclip==1.9.0
+pygetwindow==0.0.9
+screen_brightness_control==0.24.2

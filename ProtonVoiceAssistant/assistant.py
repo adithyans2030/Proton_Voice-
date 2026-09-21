@@ -257,10 +257,13 @@ def get_battery_status():
 
 def get_weather(city="Bangalore"):
     """Get weather information"""
-    api_key = "850e5e09a5f9f454fa469cd429dc390a"
-    url = f"http://api.openweathermap.org/data/2.5/weather?q={city}&appid={api_key}&units=metric"
+    api_key = os.getenv("OPENWEATHER_API_KEY")
+    if not api_key:
+        speak("The weather API key is not configured.")
+        return
+    url = f"https://api.openweathermap.org/data/2.5/weather?q={city}&appid={api_key}&units=metric"
     try:
-        response = requests.get(url).json()
+        response = requests.get(url, timeout=10).json()
         if response["cod"] != "404":
             weather_desc = response["weather"][0]["description"]
             temp = response["main"]["temp"]
