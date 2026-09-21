@@ -43,10 +43,10 @@ Proton stays a **voice client** that calls `/api/chat`. Its PC-control skills st
 |---|---|---|
 | API | FastAPI + Uvicorn, Pydantic v2, SQLite | Native SSE and WebSocket. |
 | LLM | Ollama, `llama3.2:3b` or `qwen2.5:3b` (Q4) | Choose the winner on the golden set. `gemma2:2b` is the baseline. |
-| Embeddings | `bge-small-en-v1.5` on CPU | Swap to `multilingual-e5-small` if content is not English. |
-| Search | Chroma + SQLite FTS5, merged with RRF | Hybrid search catches exact terms. |
-| Reranker | MiniLM cross-encoder, top 20 to top 5 | Keep only if the eval shows a gain. |
-| PDF | PyMuPDF, `pypdf` fallback, OCR for scans | PyMuPDF is AGPL: fine for private use only. |
+| Embeddings | `bge-small-en-v1.5` via **fastembed (ONNX)** on CPU | Lighter than torch on an 8 GB machine. Swap to `multilingual-e5-small` if content is not English. |
+| Search | **One SQLite file**: FTS5 (BM25) + vectors with exact numpy search, merged with RRF | Changed from Chroma (session 2): atomic re-ingest, one-file backup, no extra service or RAM. See "Deviations". |
+| Reranker | MiniLM cross-encoder, top 30 to top 6 | Optional and off by default; see session 2 results. |
+| PDF | PyMuPDF; OCR for scans (not built yet) | PyMuPDF is AGPL: fine for private use only. `pypdf` fallback dropped (unused). |
 | PPTX / DOCX | `python-pptx` / `python-docx` | Slide = chunk unit; include speaker notes. |
 | YouTube | `youtube-transcript-api`, then `yt-dlp` + faster-whisper | Store timestamps for `&t=` deep links. |
 | STT | faster-whisper `base.en` / `small.en` (int8) | Replaces Google STT. |
@@ -69,6 +69,16 @@ Proton stays a **voice client** that calls `/api/chat`. Its PC-control skills st
   `POST /api/documents` · `POST /api/documents/youtube` · `GET|DELETE /api/documents/{id}` · `POST /api/documents/{id}/reindex` ·
   `GET /api/jobs/{id}/events` (SSE) · `POST /api/chat` (SSE) · `WS /api/voice` ·
   `GET /api/health` · `GET /api/ready`
+
+### Deviations from the original plan (with reasons)
+
+| Plan said | Now | Why |
+|---|---|---|
+| Chroma for vectors, SQLite for metadata | Everything in one SQLite file | Replacing a document is one transaction (no drift between two stores); backup is one file; no extra dependency or RAM. Exact search is instant at study-material scale. Behind `Store`, so it can be swapped if the corpus outgrows it. |
+| sentence-transformers | fastembed (ONNX runtime) | No PyTorch on an 8 GB machine; faster start. Its `bge-small-en-v1.5` is a quantised build. |
+| Chunks of 500-800 tokens | Target 320, max 420 (estimated tokens) | bge-small truncates input at 512 tokens, so longer chunks would lose their tail when embedded. |
+| `pypdf` fallback | Not implemented | PyMuPDF opened every test file; add it back only if a real file needs it. |
+| `llama3.2:3b` as default LLM | `gemma2:2b` for now | The `llama3.2:3b` download fails on this network (untrusted TLS certificate on Ollama's blob host). `gemma2:2b` is already installed. |
 
 ## 6. Voice
 
@@ -117,8 +127,8 @@ Local accounts with argon2 and HTTP-only cookies; per-user data isolation; uploa
 ## Status tracker
 
 - [x] **Phase 0: Cleanup and foundations** (session 1, see [SESSION-01](docs/sessions/SESSION-01-phase0-foundations.md))
-- [ ] Phase 1: Core RAG
-- [ ] Phase 2: API + dashboard
+- [~] **Phase 1: Core RAG** (session 2, see [SESSION-02](docs/sessions/SESSION-02-phase1-core-rag.md)). Retrieval gate met (hit@5 98.5% hybrid, 100% with reranker; target 85%) and refusal gate met on the 81-question set (13/14 strict, 14/14 by reading). **Not fully closed:** the < 3 s first-token target is missed (about 10 s on this GPU), faithfulness is only spot-checked, the 3B model comparison is blocked by a network TLS problem, OCR and Whisper fallback are not built.
+- [ ] Phase 2: API + dashboard (next)
 - [ ] Phase 3: Chat + voice
 - [ ] Phase 4: Deploy
 - [ ] Phase 5: Extras
