@@ -32,7 +32,8 @@ You can now ingest PDF, PPTX, DOCX files and YouTube videos into subject collect
 
 - Only the commit messages changed. File contents are byte-for-byte identical, and authors and dates are unchanged. The three older commits never had the line.
 - The push used `--force-with-lease` pinned to `4cd1db6`, so it could only overwrite that exact commit. The repo had 0 forks.
-- GitHub now lists one contributor, `adithyans2030`, and no commit message on `main` has a co-author line.
+- GitHub's API and Insights graph now list one contributor, `adithyans2030`, and no commit message on `main` has a co-author line.
+- **Not yet resolved on the website:** the repository page's *Contributors* sidebar still showed the removed co-author ("Contributors 2") when checked afterwards. That list is a separate GitHub-side cache that had not refreshed, and nothing in the repository still references it (the remote has only `main`, no pull-request refs). Options: wait and re-check, ask GitHub Support to purge the old commit and refresh that cache, or delete and recreate the repository.
 - **Limitation:** the old commit `4cd1db6` is no longer on any branch, but GitHub still serves it by its exact hash (HTTP 200) until its own cleanup runs. Only someone with that link could see it. To have it purged sooner, ask GitHub Support to remove unreferenced commit `4cd1db6a8add81821c7e8c661fcae327991aa55d` from `adithyans2030/Proton_Voice-`.
 - Going forward, commits carry no co-author or tool attribution.
 
