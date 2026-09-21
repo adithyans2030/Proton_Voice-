@@ -3,7 +3,7 @@
 - **Date:** 2026-09-21
 - **Phase:** 1 of 5 (see [PLAN.md](../../PLAN.md))
 - **Outcome:** Phase 1 is **built and largely met, but not fully closed.** The retrieval and refusal targets are met on the test set. The latency target is **missed**, faithfulness is only spot-checked, and the 3B-model comparison is blocked (section 9).
-- **Git:** Phase 0 was pushed to GitHub (`f0880ce..4cd1db6`). This session's work is committed **locally only**; it has not been pushed (see section 10).
+- **Git:** Phase 0 and Phase 1 are both on GitHub `main`. At your request, the automatically added co-author line was removed from both commit messages and the history was force-pushed (see section 3). Current head: `0475cbf` plus a small follow-up commit for these notes.
 - **Tests:** 97 passing (`scripts\test.ps1`).
 
 ## 1. Summary
@@ -22,6 +22,19 @@ You can now ingest PDF, PPTX, DOCX files and YouTube videos into subject collect
 
 - Pushed the Phase 0 commit `4cd1db6` to `origin/main` (fast-forward, no force).
 - **The repository is public, and the original commit `d5fa17b` already contains the OpenWeather key on GitHub.** My push did not add any exposure, but the key is public. **Rotate it now** (see section 10). Old `context.json` versions (your earlier assistant conversation history) are also in the public history.
+
+**Removing the extra contributor (done later the same day, at your request).** My commit messages ended with an automatically added `Co-Authored-By` line, which is what makes GitHub credit a co-author. I removed that line from the two affected commits and force-pushed:
+
+| | Before | After |
+|---|---|---|
+| Phase 0 commit | `4cd1db6` | `0508b44` |
+| Phase 1 commit | `7f55046` (local) | `0475cbf` |
+
+- Only the commit messages changed. File contents are byte-for-byte identical, and authors and dates are unchanged. The three older commits never had the line.
+- The push used `--force-with-lease` pinned to `4cd1db6`, so it could only overwrite that exact commit. The repo had 0 forks.
+- GitHub now lists one contributor, `adithyans2030`, and no commit message on `main` has a co-author line.
+- **Limitation:** the old commit `4cd1db6` is no longer on any branch, but GitHub still serves it by its exact hash (HTTP 200) until its own cleanup runs. Only someone with that link could see it. To have it purged sooner, ask GitHub Support to remove unreferenced commit `4cd1db6a8add81821c7e8c661fcae327991aa55d` from `adithyans2030/Proton_Voice-`.
+- Going forward, commits carry no co-author or tool attribution.
 
 ## 4. What was built
 
@@ -144,7 +157,7 @@ A follow-up test on 12 answerable questions varied how many chunks are sent to t
 ## 10. Actions and decisions for you
 
 1. **Rotate the OpenWeather key now.** The repo is public and the key is in its history.
-2. **Approve pushing this session's commit** to GitHub (I only pushed Phase 0 because you asked).
+2. ~~Approve pushing this session's commit~~ Done: pushed after removing the co-author line (section 3). Optional: ask GitHub Support to purge the old commit `4cd1db6`.
 3. Fix the Ollama TLS problem, then I can compare `llama3.2:3b` and `qwen2.5:3b` (about 20 minutes each).
 4. Confirm the YouTube link is what you wanted, and say whether to also ingest the Unit 4 and 5 `.docx` notes.
 
